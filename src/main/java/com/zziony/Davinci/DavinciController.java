@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/v1")
 public class DavinciController {
 
-    @GetMapping("/v1/davinci")
+    @GetMapping("/davinci")
     public String davinci() {
         return "오징어 게임을 시작합니다.";
     }
