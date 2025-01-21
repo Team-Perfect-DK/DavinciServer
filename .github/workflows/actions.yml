@@ -60,8 +60,8 @@ jobs:
           cd /davinci
           docker-compose stop spring
           docker-compose rm -f spring
-          docker-compose up -d spring
-          # 추가적인 배포 명령어 작성
+          docker-compose pull
+          docker-compose up -d --force-recreate spring
         EOF
     # NOTE: The Gradle Wrapper is the default and recommended way to run Gradle (https://docs.gradle.org/current/userguide/gradle_wrapper.html).
     # If your project does not have the Gradle Wrapper configured, you can use the following configuration to run Gradle with a specified version.
