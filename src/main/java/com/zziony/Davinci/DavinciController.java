@@ -10,7 +10,7 @@ public class DavinciController {
 
     @GetMapping("/davinci")
     public String davinci() {
-        return "오징어 게임을 시작합니다.";
+        return "오징어 게임을 시작합니다. CI Test";
     }
 
 }
