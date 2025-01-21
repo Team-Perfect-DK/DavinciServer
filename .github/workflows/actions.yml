@@ -57,6 +57,7 @@ jobs:
     - name: Deploy to EC2
       run: |
         ssh -o StrictHostKeyChecking=no ubuntu@ec2-3-36-196-30.ap-northeast-2.compute.amazonaws.com << 'EOF'
+          cd /davinci
           docker-compose stop spring
           docker-compose rm -f spring
           docker-compose up -d spring
