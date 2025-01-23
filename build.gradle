@@ -24,12 +24,21 @@ repositories {
 }
 
 dependencies {
+	// Spring Boot Core
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	compileOnly 'org.projectlombok:lombok'
+	// Development Tools
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
-	runtimeOnly 'com.mysql:mysql-connector-j'
+	// JPA
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	// DB
+	runtimeOnly 'com.h2database:h2'
+//	runtimeOnly 'com.mysql:mysql-connector-j'
+	// WebSocket Support
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
