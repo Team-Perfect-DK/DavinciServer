@@ -16,6 +16,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
         this.myWebSocketHandler = myWebSocketHandler;
     }
 
+
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(myWebSocketHandler, "/ws")
