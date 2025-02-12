@@ -1,37 +1,35 @@
 package com.zziony.Davinci.model;
 
 import com.zziony.Davinci.model.enums.RoomStatus;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.UUID;
 
 @Getter
 @Setter
+@Entity
+@Table(name = "rooms")
 public class Room {
-    private Long roomId; // 방 고유 ID
-    private String roomName; // 방 이름
-    private List<User> players; // 참여 유저 목록
-    private RoomStatus roomStatus; // 게임 시작 여부
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
+    private String title; // 방 제목
+    private String roomCode; // 방 코드 (랜덤 생성)
 
-    // 생성자
-    public Room(Long roomId, String roomName, RoomStatus roomStatus) {
-        this.roomId = roomId;
-        this.roomName = roomName;
-        this.players = new ArrayList<>();
-        this.roomStatus = roomStatus;
+    @Enumerated(EnumType.STRING)
+    private RoomStatus status; // WAITING(대기중) / PLAYING(게임중)
+
+    public Room() {
+        this.roomCode = UUID.randomUUID().toString().substring(0, 8); // 랜덤 방 코드
+        this.status = RoomStatus.WAITING;
     }
 
-    // 유저 추가 메소드
-    public void addUser(User user) {
-        this.players.add(user);
+    public Room(String title) {
+        this.title = title;
+        this.roomCode = UUID.randomUUID().toString().substring(0, 8);
+        this.status = RoomStatus.WAITING;
     }
-
-    // 유저 삭제 메소드
-    public void removeUser(User user) {
-        this.players.remove(user);
-    }
-
 }
