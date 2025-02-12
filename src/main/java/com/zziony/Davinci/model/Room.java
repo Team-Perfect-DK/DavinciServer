@@ -9,15 +9,15 @@ import java.util.List;
 
 @Getter
 @Setter
-public class RoomDTO {
+public class Room {
     private Long roomId; // 방 고유 ID
     private String roomName; // 방 이름
-    private List<UserDTO> players; // 참여 유저 목록
+    private List<User> players; // 참여 유저 목록
     private RoomStatus roomStatus; // 게임 시작 여부
 
 
     // 생성자
-    public RoomDTO(Long roomId, String roomName, RoomStatus roomStatus) {
+    public Room(Long roomId, String roomName, RoomStatus roomStatus) {
         this.roomId = roomId;
         this.roomName = roomName;
         this.players = new ArrayList<>();
@@ -25,12 +25,12 @@ public class RoomDTO {
     }
 
     // 유저 추가 메소드
-    public void addUser(UserDTO user) {
+    public void addUser(User user) {
         this.players.add(user);
     }
 
     // 유저 삭제 메소드
-    public void removeUser(UserDTO user) {
+    public void removeUser(User user) {
         this.players.remove(user);
     }
 
