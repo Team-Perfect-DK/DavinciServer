@@ -33,6 +33,7 @@ dependencies {
 	// JPA
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	// DB
+	implementation 'com.mysql:mysql-connector-j'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 	// WebSocket Support
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
