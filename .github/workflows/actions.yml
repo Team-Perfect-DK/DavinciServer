@@ -16,6 +16,20 @@ on:
 jobs:
   build:
 
+    services:
+      mysql:
+        image: mysql:5.7
+        env:
+          MYSQL_ROOT_PASSWORD: fourtwofive!
+          MYSQL_DATABASE: Davinci
+        ports:
+          - 3306:3306
+          options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,7 +50,7 @@ jobs:
     - name: Build with Gradle Wrapper
       run: |
         chmod +x ./gradlew
-        ./gradlew --debug build
+        ./gradlew build
 
     - name: Log in to Docker Hub
       uses: docker/login-action@v2
