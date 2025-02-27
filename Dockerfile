@@ -5,5 +5,6 @@ FROM openjdk:17-jdk-slim
 COPY build/libs/*.jar /app/demo.jar
 
 # 3. 애플리케이션을 실행하는 명령어
-ENTRYPOINT ["java", "-jar", "/app/demo.jar"]
+ENTRYPOINT ["java", "-jar", "/app/demo.jar", "—spring.profiles.active=prod"]
 
+EXPOSE 9090

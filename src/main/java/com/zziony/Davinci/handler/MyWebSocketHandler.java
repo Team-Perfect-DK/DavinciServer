@@ -22,7 +22,7 @@ public class MyWebSocketHandler extends TextWebSocketHandler {
         System.out.println("새로운 클라이언트 연결됨: " + session.getId());
 
         // 연결된 클라이언트에게 알림 메시지 전송 (예: '새로운 사용자가 연결되었습니다')
-        broadcastMessage("새로운 사용자가 연결되었습니다: " + session.getId());
+        broadcastMessage("새로운 사용자가 연결되었습니다");
     }
 
     @Override
@@ -40,7 +40,7 @@ public class MyWebSocketHandler extends TextWebSocketHandler {
         System.out.println("클라이언트 연결 종료됨: " + session.getId());
 
         // 연결 종료된 클라이언트에게 알림 메시지 전송
-        broadcastMessage("사용자가 연결을 종료했습니다: " + session.getId());
+        broadcastMessage("사용자가 연결을 종료했습니다");
     }
 
     private void broadcastMessage(String message) throws Exception {
