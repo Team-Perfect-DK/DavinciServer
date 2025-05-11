@@ -20,7 +20,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
-                .setAllowedOrigins("https://ws.davinci-code.net")
+                .setAllowedOrigins("https://davinci-code.net", "http://localhost:3000")
                 .withSockJS(); // SockJS 사용
     }
 }

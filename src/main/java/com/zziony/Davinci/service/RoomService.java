@@ -76,7 +76,7 @@ public class RoomService {
     }
 
     // 🔹 게임 시작 (WebSocket 알림 추가)
-    public void startGame(String roomCode) {
+    public Room startGame(String roomCode) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
 
@@ -89,6 +89,7 @@ public class RoomService {
 
         // WebSocket을 통해 게임 시작 알림
         messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, "GAME_STARTED");
+        return room;
     }
 
     // 🔹 플레이어 나가기 (WebSocket 알림 추가)
