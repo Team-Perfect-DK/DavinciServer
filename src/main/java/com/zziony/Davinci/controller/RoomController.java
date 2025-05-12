@@ -62,8 +62,8 @@ public class RoomController {
     // 방에서 나가기
     @PostMapping("/{roomCode}/leave")
     public ResponseEntity<String> leaveRoom(@PathVariable("roomCode") String roomCode, @RequestBody Map<String, String> request) {
-        String playerId = request.get("playerId");
-        roomService.leaveRoom(roomCode, playerId);
+        String userId = request.get("userId");
+        roomService.leaveRoom(roomCode, userId);
         return ResponseEntity.ok("플레이어가 방에서 나갔습니다.");
     }
 }

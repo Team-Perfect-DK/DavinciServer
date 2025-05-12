@@ -38,6 +38,7 @@ public class RoomService {
 
         // WebSocket을 통해 새로운 방 생성 알림
         messagingTemplate.convertAndSend("/topic/rooms", savedRoom);
+        notifyRoomUpdate();
 
         return savedRoom;
     }
@@ -120,6 +121,13 @@ public class RoomService {
             Room updatedRoom = roomRepository.save(room);
             messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, updatedRoom);
         }
+
+        notifyRoomUpdate();
         return room;
+    }
+
+    // 룸 업데이트
+    public void notifyRoomUpdate() {
+        messagingTemplate.convertAndSend("/topic/rooms/update", "ROOM_UPDATED");
     }
 }
