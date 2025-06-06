@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@CrossOrigin(origins = "http://localhost:3000")
 @RequestMapping("/api/rooms")
 public class RoomController {
 
@@ -26,8 +25,15 @@ public class RoomController {
     @PostMapping("/create")
     public Room createRoom(@RequestBody Map<String, String> request) {
         String title = request.get("title");
-        String host = request.get("host"); // 방장의 유저 ID
-        return roomService.createRoom(title, host);
+        String hostId = request.get("hostId"); // 방장의 유저 ID
+        return roomService.createRoom(title, hostId);
+    }
+
+    // 방 참가 (guest 추가)
+    @PostMapping("/{roomCode}/join")
+    public ResponseEntity<Room> joinRoom(@PathVariable("roomCode") String roomCode, @RequestBody Map<String, String> request) {
+        String guestId = request.get("guestId");
+        return ResponseEntity.ok(roomService.joinRoom(roomCode, guestId));
     }
 
     // 대기 중인 방 조회
@@ -44,12 +50,7 @@ public class RoomController {
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
     }
 
-    // 방 참가 (guest 추가)
-    @PostMapping("/{roomCode}/join")
-    public ResponseEntity<Room> joinRoom(@PathVariable("roomCode") String roomCode, @RequestBody Map<String, String> request) {
-        String guestId = request.get("guest");
-        return ResponseEntity.ok(roomService.joinRoom(roomCode, guestId));
-    }
+
 
     // 게임 시작
     @PostMapping("/{roomCode}/start")
@@ -61,8 +62,8 @@ public class RoomController {
     // 방에서 나가기
     @PostMapping("/{roomCode}/leave")
     public ResponseEntity<String> leaveRoom(@PathVariable("roomCode") String roomCode, @RequestBody Map<String, String> request) {
-        String playerId = request.get("playerId");
-        roomService.leaveRoom(roomCode, playerId);
+        String userId = request.get("userId");
+        roomService.leaveRoom(roomCode, userId);
         return ResponseEntity.ok("플레이어가 방에서 나갔습니다.");
     }
 }
