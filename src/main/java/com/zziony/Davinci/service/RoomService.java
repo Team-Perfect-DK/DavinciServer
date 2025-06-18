@@ -10,6 +10,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -68,10 +69,16 @@ public class RoomService {
 
         room.setGuestId(guestId);
         room.setGuestNickname(guestNickname);
-        Room updatedRoom = roomRepository.save(room);
 
         // WebSocket을 통해 방 참가 알림
-        messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, updatedRoom);
+        Room updatedRoom = roomRepository.save(room);
+        roomRepository.saveAndFlush(room);
+
+        Map<String, Object> message = Map.of(
+                "type", "ROOM_UPDATED",
+                "payload", updatedRoom
+        );
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
 
         return updatedRoom;
     }
@@ -86,10 +93,13 @@ public class RoomService {
         }
 
         room.setStatus(RoomStatus.PLAYING);
-        roomRepository.save(room);
+        Room updatedRoom = roomRepository.save(room);
 
-        // WebSocket을 통해 게임 시작 알림
-        messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, "GAME_STARTED");
+        Map<String, Object> message = Map.of(
+                "type", "GAME_STARTED",
+                "payload", updatedRoom
+        );
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
         return room;
     }
 
@@ -116,10 +126,18 @@ public class RoomService {
         // 방이 비어 있으면 삭제, 아니면 업데이트
         if (room.isEmpty()) {
             roomRepository.delete(room);
-            messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, "ROOM_DELETED");
+            Map<String, Object> message = Map.of(
+                    "type", "ROOM_DELETED",
+                    "payload", Map.of("roomCode", roomCode)
+            );
+            messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
         } else {
             Room updatedRoom = roomRepository.save(room);
-            messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, updatedRoom);
+            Map<String, Object> message = Map.of(
+                    "type", "ROOM_UPDATED",
+                    "payload", updatedRoom
+            );
+            messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
         }
 
         notifyRoomUpdate();
@@ -128,6 +146,10 @@ public class RoomService {
 
     // 룸 업데이트
     public void notifyRoomUpdate() {
-        messagingTemplate.convertAndSend("/topic/rooms/update", "ROOM_UPDATED");
+        Map<String, Object> message = Map.of(
+                "type", "ROOM_LIST_UPDATED",
+                "payload", getWaitingRooms()
+        );
+        messagingTemplate.convertAndSend("/topic/rooms/update", message);
     }
 }
