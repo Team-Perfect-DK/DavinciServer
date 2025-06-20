@@ -59,6 +59,20 @@ public class RoomController {
         return ResponseEntity.ok("게임이 시작되었습니다!");
     }
 
+    // 현재 턴 유저 확인
+    @GetMapping("/{roomCode}/turn")
+    public ResponseEntity<String> getCurrentTurn(@PathVariable("roomCode") String roomCode) {
+        String userId = roomService.getCurrentTurn(roomCode);
+        return ResponseEntity.ok(userId);
+    }
+
+    // 턴 넘기기
+    @PostMapping("/{roomCode}/turn/pass")
+    public ResponseEntity<String> passTurn(@PathVariable("roomCode") String roomCode) {
+        roomService.passTurn(roomCode);
+        return ResponseEntity.ok("턴이 넘어갔습니다.");
+    }
+
     // 방에서 나가기
     @PostMapping("/{roomCode}/leave")
     public ResponseEntity<String> leaveRoom(@PathVariable("roomCode") String roomCode, @RequestBody Map<String, String> request) {

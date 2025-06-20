@@ -19,15 +19,18 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate; // WebSocket 메시지 전송을 위한 템플릿
+    private final CardService cardService;
+
 
     @Autowired
-    public RoomService(RoomRepository roomRepository, UserRepository userRepository, SimpMessagingTemplate messagingTemplate) {
+    public RoomService(RoomRepository roomRepository, UserRepository userRepository, SimpMessagingTemplate messagingTemplate, CardService cardService) {
         this.roomRepository = roomRepository;
         this.userRepository = userRepository;
         this.messagingTemplate = messagingTemplate;
+        this.cardService = cardService;
     }
 
-    // 🔹 방 생성 (host 설정)
+    // 방 생성 (host 설정)
     public Room createRoom(String title, String hostId) {
         User user = userRepository.findBySessionId(hostId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -44,17 +47,17 @@ public class RoomService {
         return savedRoom;
     }
 
-    // 🔹 대기 중인 방 리스트 조회
+    // 대기 중인 방 리스트 조회
     public List<Room> getWaitingRooms() {
         return roomRepository.findByStatus(RoomStatus.WAITING);
     }
 
-    // 🔹 방 코드로 특정 방 찾기
+    // 방 코드로 특정 방 찾기
     public Optional<Room> findRoomByCode(String roomCode) {
         return roomRepository.findByRoomCode(roomCode);
     }
 
-    // 🔹 방에 게스트 참여 (WebSocket 알림 추가)
+    // 방에 게스트 참여 (WebSocket 알림 추가)
     public Room joinRoom(String roomCode, String guestId) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
@@ -83,7 +86,7 @@ public class RoomService {
         return updatedRoom;
     }
 
-    // 🔹 게임 시작 (WebSocket 알림 추가)
+    // 게임 시작 (WebSocket 알림 추가)
     public Room startGame(String roomCode) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
@@ -100,10 +103,60 @@ public class RoomService {
                 "payload", updatedRoom
         );
         messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
+
+        cardService.distributeCards(room.getHostId(), room.getId());
+        cardService.distributeCards(room.getGuestId(), room.getId());
+        room.setCurrentTurnUserId(room.getHostId()); // 호스트부터 시작
+
         return room;
     }
 
-    // 🔹 플레이어 나가기 (WebSocket 알림 추가)
+    // 게임 턴 진행하는 id 가져오기
+    public String getCurrentTurn(String roomCode) {
+        Room room = roomRepository.findByRoomCode(roomCode)
+                .orElseThrow(() -> new IllegalArgumentException("방이 없습니다."));
+        return room.getCurrentTurnUserId();
+    }
+
+    // 게임 턴 진행하기
+    public void passTurn(String roomCode) {
+        Room room = roomRepository.findByRoomCode(roomCode)
+                .orElseThrow(() -> new IllegalArgumentException("방이 없습니다."));
+
+        String newTurn = room.getHostId().equals(room.getCurrentTurnUserId())
+                ? room.getGuestId()
+                : room.getHostId();
+
+        room.setCurrentTurnUserId(newTurn);
+        roomRepository.save(room);
+    }
+
+    // 게임 종료하기
+    public void checkAndEndGameIfNeeded(String roomCode) {
+        Room room = roomRepository.findByRoomCode(roomCode)
+                .orElseThrow(() -> new IllegalArgumentException("방이 없습니다."));
+
+        boolean hostLost = cardService.hasUserLost(room.getHostId(), room.getId());
+        boolean guestLost = cardService.hasUserLost(room.getGuestId(), room.getId());
+
+        if (hostLost || guestLost) {
+            room.setStatus(RoomStatus.ENDED);
+
+            if (hostLost) {
+                room.setWinnerId(room.getGuestId());
+                room.setWinnerNickname(room.getGuestNickname());
+            } else {
+                room.setWinnerId(room.getHostId());
+                room.setWinnerNickname(room.getHostNickname());
+            }
+
+            roomRepository.save(room);
+        }
+    }
+
+
+
+    // 플레이어 나가기 (WebSocket 알림 추가)
     public Room leaveRoom(String roomCode, String playerId) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
