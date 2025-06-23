@@ -1,6 +1,6 @@
 package com.zziony.Davinci.controller;
 
-import com.zziony.Davinci.model.CardGuessRequest;
+import com.zziony.Davinci.model.ws.CardGuessRequest;
 import com.zziony.Davinci.model.Room;
 import com.zziony.Davinci.model.enums.RoomStatus;
 import com.zziony.Davinci.service.CardService;
@@ -29,7 +29,7 @@ public class GameController {
     public ResponseEntity<Map<String, Object>> guessCard(@RequestBody CardGuessRequest request) {
         CardService.GuessResult result = cardService.checkGuess(request);
 
-        if (!result.correct) {
+        if (!result.isCorrect()) {
             roomService.passTurn(request.getRoomCode());
         }
 
@@ -39,8 +39,8 @@ public class GameController {
         Room room = roomService.findRoomByCode(request.getRoomCode()).orElseThrow();
 
         Map<String, Object> response = new HashMap<>();
-        response.put("correct", result.correct);
-        response.put("openedCardId", result.openedCardId);
+        response.put("correct", result.isCorrect());
+        response.put("openedCardId", result.getOpenedCardId());
         response.put("nextTurnUserId", room.getCurrentTurnUserId());
         response.put("gameEnded", room.getStatus() == RoomStatus.ENDED);
         response.put("winnerNickname", room.getWinnerNickname());

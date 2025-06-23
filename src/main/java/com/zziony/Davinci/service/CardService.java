@@ -1,9 +1,9 @@
 package com.zziony.Davinci.service;
 
 import com.zziony.Davinci.model.Card;
-import com.zziony.Davinci.model.CardGuessRequest;
 import com.zziony.Davinci.model.enums.CardColor;
 import com.zziony.Davinci.model.enums.CardStatus;
+import com.zziony.Davinci.model.ws.CardGuessRequest;
 import com.zziony.Davinci.repository.CardRepository;
 import org.springframework.stereotype.Service;
 
@@ -18,33 +18,45 @@ public class CardService {
         this.cardRepository = cardRepository;
     }
 
-    public void distributeCards(String userId, Long roomId) {
-        // 숫자: 0~11 중 4개 랜덤 선택
+    public void distributeCardsForRoom(Long roomId, String hostId, String guestId) {
+        // 0~11 중 8개 숫자만 추출
         List<Integer> numbers = new ArrayList<>();
         for (int i = 0; i <= 11; i++) numbers.add(i);
         Collections.shuffle(numbers);
-        List<Integer> selectedNumbers = numbers.subList(0, 4);
+        List<Integer> selectedNumbers = numbers.subList(0, 8); // 총 8장
 
-        // 흰/검 조합 만들기
+        // 색 조합은 2명 각각 따로 생성하되, 중복 제거
         List<List<CardColor>> colorCombinations = Arrays.asList(
                 Arrays.asList(CardColor.WHITE, CardColor.BLACK, CardColor.BLACK, CardColor.BLACK),
                 Arrays.asList(CardColor.WHITE, CardColor.WHITE, CardColor.BLACK, CardColor.BLACK),
-                Arrays.asList(CardColor.WHITE, CardColor.WHITE, CardColor.WHITE, CardColor.BLACK),
-                Arrays.asList(CardColor.BLACK, CardColor.BLACK, CardColor.BLACK, CardColor.BLACK),
-                Arrays.asList(CardColor.WHITE, CardColor.WHITE, CardColor.WHITE, CardColor.WHITE)
+                Arrays.asList(CardColor.WHITE, CardColor.WHITE, CardColor.WHITE, CardColor.BLACK)
         );
 
         Collections.shuffle(colorCombinations);
-        List<CardColor> selectedColors = colorCombinations.get(0);
+        List<CardColor> hostColors = new ArrayList<>(colorCombinations.get(0));
+        Collections.shuffle(colorCombinations);
+        List<CardColor> guestColors = new ArrayList<>(colorCombinations.get(0));
 
-        // 카드 생성 및 저장
         List<Card> cards = new ArrayList<>();
+
+        // host
         for (int i = 0; i < 4; i++) {
             Card card = new Card();
             card.setNumber(selectedNumbers.get(i));
-            card.setColor(selectedColors.get(i));
+            card.setColor(hostColors.get(i));
             card.setStatus(CardStatus.CLOSE);
-            card.setUserId(userId);
+            card.setUserId(hostId);
+            card.setRoomId(roomId);
+            cards.add(card);
+        }
+
+        // guest
+        for (int i = 4; i < 8; i++) {
+            Card card = new Card();
+            card.setNumber(selectedNumbers.get(i));
+            card.setColor(guestColors.get(i - 4));
+            card.setStatus(CardStatus.CLOSE);
+            card.setUserId(guestId);
             card.setRoomId(roomId);
             cards.add(card);
         }
@@ -52,20 +64,25 @@ public class CardService {
         cardRepository.saveAll(cards);
     }
 
+
     public List<Card> getCardsByUser(String userId, Long roomId) {
         return cardRepository.findByUserIdAndRoomId(userId, roomId);
     }
 
 
     public class GuessResult {
-        public boolean correct;
-        public Long openedCardId; // 어떤 카드가 공개되었는지
+        private boolean correct;
+        private Long openedCardId;
 
         public GuessResult(boolean correct, Long openedCardId) {
             this.correct = correct;
             this.openedCardId = openedCardId;
         }
+
+        public boolean isCorrect() { return correct; }
+        public Long getOpenedCardId() { return openedCardId; }
     }
+
 
     public GuessResult checkGuess(CardGuessRequest request) {
         Card target = cardRepository.findById(request.getTargetCardId())

@@ -1,4 +1,4 @@
-package com.zziony.Davinci.model;
+package com.zziony.Davinci.model.ws;
 
 import lombok.Getter;
 

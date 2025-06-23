@@ -5,5 +5,4 @@ public enum WebSocketMessageType {
     DISCONNECT,
     CHAT,
     GAME_UPDATE,
-
 }

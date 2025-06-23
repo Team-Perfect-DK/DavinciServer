@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface CardRepository extends JpaRepository<Card, Long> {
     List<Card> findByUserIdAndRoomId(String userId, Long roomId);
+    List<Card> findByRoomId(Long roomId);
 }
