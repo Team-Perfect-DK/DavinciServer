@@ -3,7 +3,6 @@ package com.zziony.Davinci.controller;
 import com.zziony.Davinci.model.Room;
 import com.zziony.Davinci.service.RoomService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,7 +12,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/rooms")
 public class RoomController {
-
     private final RoomService roomService;
 
     @Autowired
@@ -21,7 +19,7 @@ public class RoomController {
         this.roomService = roomService;
     }
 
-    // 방 생성
+    // 1. 방 생성
     @PostMapping("/create")
     public Room createRoom(@RequestBody Map<String, String> request) {
         String title = request.get("title");
@@ -29,55 +27,32 @@ public class RoomController {
         return roomService.createRoom(title, hostId);
     }
 
-    // 방 참가 (guest 추가)
+    // 2. 방 참가
     @PostMapping("/{roomCode}/join")
     public ResponseEntity<Room> joinRoom(@PathVariable("roomCode") String roomCode, @RequestBody Map<String, String> request) {
         String guestId = request.get("guestId");
         return ResponseEntity.ok(roomService.joinRoom(roomCode, guestId));
     }
 
-    // 대기 중인 방 조회
+    // 3. 대기 중인 방 리스트
     @GetMapping("/waiting")
     public List<Room> getWaitingRooms() {
         return roomService.getWaitingRooms();
     }
 
-    // 특정 방 조회
+    // 4. 특정 방 조회
     @GetMapping("/{roomCode}")
-    public ResponseEntity<Room> findRoomByCode(@PathVariable("roomCode") String roomCode) {
+    public Room getRoom(@PathVariable String roomCode) {
         return roomService.findRoomByCode(roomCode)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+                .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
     }
 
-
-
-    // 게임 시작
-    @PostMapping("/{roomCode}/start")
-    public ResponseEntity<String> startGame(@PathVariable("roomCode") String roomCode) {
-        roomService.startGame(roomCode);
-        return ResponseEntity.ok("게임이 시작되었습니다!");
-    }
-
-    // 현재 턴 유저 확인
-    @GetMapping("/{roomCode}/turn")
-    public ResponseEntity<String> getCurrentTurn(@PathVariable("roomCode") String roomCode) {
-        String userId = roomService.getCurrentTurn(roomCode);
-        return ResponseEntity.ok(userId);
-    }
-
-    // 턴 넘기기
-    @PostMapping("/{roomCode}/turn/pass")
-    public ResponseEntity<String> passTurn(@PathVariable("roomCode") String roomCode) {
-        roomService.passTurn(roomCode);
-        return ResponseEntity.ok("턴이 넘어갔습니다.");
-    }
-
-    // 방에서 나가기
+    // 5. 방 나가기
     @PostMapping("/{roomCode}/leave")
     public ResponseEntity<String> leaveRoom(@PathVariable("roomCode") String roomCode, @RequestBody Map<String, String> request) {
         String userId = request.get("userId");
         roomService.leaveRoom(roomCode, userId);
         return ResponseEntity.ok("플레이어가 방에서 나갔습니다.");
     }
+
 }

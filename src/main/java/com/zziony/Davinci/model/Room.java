@@ -33,7 +33,9 @@ public class Room {
     private String guestNickname;
     private String winnerId; // 위너 ID
     private String winnerNickname;
-
+    @Setter
+    @Getter
+    private String currentTurnPlayerId;
 
     public Room() {
         this.roomCode = UUID.randomUUID().toString().substring(0, 8); // 랜덤 방 코드
@@ -66,4 +68,5 @@ public class Room {
     public boolean isEmpty() {
         return hostId == null && guestId == null;
     }
+
 }
