@@ -4,6 +4,7 @@ import com.zziony.Davinci.model.Card;
 import com.zziony.Davinci.model.Room;
 import com.zziony.Davinci.model.ws.JoinRequest;
 import com.zziony.Davinci.model.ws.StartRequest;
+import com.zziony.Davinci.repository.RoomRepository;
 import com.zziony.Davinci.service.CardService;
 import com.zziony.Davinci.service.RoomService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,12 +19,14 @@ import java.util.Map;
 public class RoomWebSocketController {
     private final RoomService roomService;
     private final CardService cardService;
+    private final RoomRepository roomRepository;
     private final SimpMessagingTemplate messagingTemplate;
 
     @Autowired
-    public RoomWebSocketController(RoomService roomService, CardService cardService, SimpMessagingTemplate messagingTemplate) {
+    public RoomWebSocketController(RoomService roomService, CardService cardService, RoomRepository roomRepository, SimpMessagingTemplate messagingTemplate) {
         this.roomService = roomService;
         this.cardService = cardService;
+        this.roomRepository = roomRepository;
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -70,12 +73,20 @@ public class RoomWebSocketController {
         roomService.drawCard(roomCode, userId, color);
     }
 
-    // 턴 넘기기 (Copilot 방식에서는 사용하지 않을 수도 있음)
+    // 턴 넘기기
     @MessageMapping("/rooms/turn/pass")
     public void passTurn(Map<String, String> message) {
         String roomCode = message.get("roomCode");
         String userId = message.get("userId");
+        Room room = roomRepository.findByRoomCode(roomCode)
+                .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
+        String nextTurnUserId = userId.equals(room.getHostId()) ? room.getGuestId() : room.getHostId();
+        room.setCurrentTurnPlayerId(nextTurnUserId);
+        roomRepository.save(room);
 
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomCode,
+                Map.of("action", "TURN_CHANGED", "payload", Map.of("nextTurnUserId", nextTurnUserId))
+        );
     }
 
     // 현재 턴 유저 요청
