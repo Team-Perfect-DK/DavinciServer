@@ -6,6 +6,7 @@ import com.zziony.Davinci.model.User;
 import com.zziony.Davinci.model.enums.CardColor;
 import com.zziony.Davinci.model.enums.CardStatus;
 import com.zziony.Davinci.model.enums.RoomStatus;
+import com.zziony.Davinci.repository.CardRepository;
 import com.zziony.Davinci.repository.RoomRepository;
 import com.zziony.Davinci.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,13 +24,15 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final CardService cardService;
+    private final CardRepository cardRepository;
     private final SimpMessagingTemplate messagingTemplate;
 
     @Autowired
-    public RoomService(RoomRepository roomRepository, UserRepository userRepository, CardService cardService, SimpMessagingTemplate messagingTemplate) {
+    public RoomService(RoomRepository roomRepository, UserRepository userRepository, CardService cardService, CardRepository cardRepository, SimpMessagingTemplate messagingTemplate) {
         this.roomRepository = roomRepository;
         this.userRepository = userRepository;
         this.cardService = cardService;
+        this.cardRepository = cardRepository;
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -105,6 +108,23 @@ public class RoomService {
 
         room.assignNewHostIfNeeded();
 
+        // 게임 중이었고, 한명이라도 남아 있을 때 비정상 종료 처리
+        if (room.getStatus() == RoomStatus.PLAYING && (!room.isEmpty())) {
+            room.setStatus(RoomStatus.WAITING);
+            room.setWinnerNickname(null);
+            roomRepository.save(room);
+
+            // 남아있는 유저에게 알림 전송 (비정상 종료)
+            Map<String, Object> message = Map.of(
+                    "action", "GAME_RESET",
+                    "payload", Map.of(
+                            "reason", "상대방이 게임을 나가 게임이 리셋되었습니다.",
+                            "roomCode", roomCode
+                    )
+            );
+            messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
+        }
+
         if (room.isEmpty()) {
             roomRepository.delete(room);
             Map<String, Object> message = Map.of(
@@ -112,16 +132,18 @@ public class RoomService {
                     "payload", Map.of("roomCode", roomCode)
             );
             messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
+            notifyRoomUpdate();
         } else {
-            Room updatedRoom = roomRepository.save(room);
+            room.setStatus(RoomStatus.WAITING);
+            room.setWinnerNickname(null);
+            roomRepository.save(room);
             Map<String, Object> message = Map.of(
                     "action", "ROOM_UPDATED",
-                    "payload", updatedRoom
+                    "payload", room
             );
             messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
+            notifyRoomUpdate();
         }
-
-        notifyRoomUpdate();
         return room;
     }
 
@@ -133,6 +155,7 @@ public class RoomService {
         if (!room.canStartGame()) {
             throw new IllegalStateException("게임을 시작하려면 두 명의 플레이어가 필요합니다.");
         }
+        cardService.resetCardsForRoom(room.getId());
         room.setStatus(RoomStatus.PLAYING);
         room.setCurrentTurnPlayerId(room.getHostId());
 
@@ -210,6 +233,30 @@ public class RoomService {
         if (correct) {
             card.setStatus(CardStatus.OPEN);
             cardService.save(card);
+            cardRepository.flush();
+            openedCard = card;
+
+            String opponentId = userId.equals(room.getHostId()) ? room.getGuestId() : room.getHostId();
+            boolean opponentAllOpen = cardService.getCardsByUser(opponentId, card.getRoomId())
+                    .stream().allMatch(c -> c.getStatus() == CardStatus.OPEN);
+
+            if (opponentAllOpen) {
+                Room updatedRoom = roomRepository.findByRoomCode(roomCode)
+                        .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
+                updatedRoom.setStatus(RoomStatus.ENDED);
+                updatedRoom.setWinnerNickname(userRepository.findBySessionId(userId)
+                        .map(User::getNickname).orElse("UNKNOWN"));
+                roomRepository.save(updatedRoom);
+
+                cardService.resetCardsForRoom(updatedRoom.getId());
+
+                messagingTemplate.convertAndSend("/topic/rooms/" + roomCode,
+                        Map.of("action", "GAME_ENDED", "payload", Map.of(
+                                "winnerNickname", updatedRoom.getWinnerNickname()
+                        ))
+                );
+                return;
+            }
         } else {
             // 내 카드 중 CLOSE인 것 하나 OPEN
             List<Card> myCards = cardService.getCardsByUser(userId, card.getRoomId());
@@ -221,14 +268,8 @@ public class RoomService {
                 openedCard = myCard; // 오픈된 카드 저장
             }
         }
-
         // 턴 관리
         String nextTurnUserId = processNextTurn(room, userId, correct);
-
-        String openedCardOwnerNickname = userRepository.findBySessionId(card.getUserId())
-                .map(User::getNickname).orElse("알 수 없음");
-        String nextTurnUserNickname = userRepository.findBySessionId(nextTurnUserId)
-                .map(User::getNickname).orElse("알 수 없음");
 
         // 카드 맞추기 결과 broadcast
         Map<String, Object> result = new HashMap<>();
@@ -243,34 +284,20 @@ public class RoomService {
                 .map(User::getNickname).orElse("알 수 없음"));
 
         if (openedCard != null) {
-            result.put("openedMyCardId", openedCard.getId());
             Map<String, Object> openedCardInfo = new HashMap<>();
             openedCardInfo.put("id", openedCard.getId());
             openedCardInfo.put("number", openedCard.getNumber());
             openedCardInfo.put("color", openedCard.getColor());
             openedCardInfo.put("status", openedCard.getStatus());
             openedCardInfo.put("userId", openedCard.getUserId());
-            result.put("openedMyCardInfo", openedCardInfo);
+            result.put("openedCardInfo", openedCardInfo);
+
+            if (!correct) result.put("openedMyCardId", openedCard.getId());
         }
 
         messagingTemplate.convertAndSend("/topic/rooms/" + roomCode,
                 Map.of("action", "CARD_OPENED", "payload", result)
         );
-
-        // 게임 종료 체크
-        if (cardService.hasUserLost(card.getUserId(), card.getRoomId())) {
-            Room updatedRoom = roomRepository.findByRoomCode(roomCode)
-                    .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
-            updatedRoom.setStatus(RoomStatus.ENDED);
-            updatedRoom.setWinnerNickname(userRepository.findBySessionId(userId).map(User::getNickname).orElse("UNKNOWN"));
-            roomRepository.save(updatedRoom);
-
-            messagingTemplate.convertAndSend("/topic/rooms/" + roomCode,
-                    Map.of("action", "GAME_ENDED", "payload", Map.of(
-                            "winnerNickname", updatedRoom.getWinnerNickname()
-                    ))
-            );
-        }
     }
 
     // 현재 턴 유저 조회

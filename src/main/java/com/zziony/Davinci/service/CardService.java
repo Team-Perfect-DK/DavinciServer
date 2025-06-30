@@ -5,8 +5,12 @@ import com.zziony.Davinci.model.enums.CardColor;
 import com.zziony.Davinci.model.enums.CardStatus;
 import com.zziony.Davinci.repository.CardRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 
 @Service
 public class CardService {
@@ -86,5 +90,14 @@ public class CardService {
     public boolean hasUserLost(String userId, Long roomId) {
         return cardRepository.findByUserIdAndRoomId(userId, roomId)
                 .stream().allMatch(c -> c.getStatus() == CardStatus.OPEN);
+    }
+
+    @Transactional
+    public void resetCardsForRoom(Long roomId) {
+        cardRepository.deleteByRoomId(roomId);
+    }
+
+    public void flush() {
+        cardRepository.flush();
     }
 }
