@@ -11,4 +11,5 @@ public interface CardRepository extends JpaRepository<Card, Long> {
     List<Card> findByRoomId(Long roomId);
     List<Card> findByRoomIdAndUserId(Long roomId, String userId);
     List<Card> findByRoomIdAndUserIdAndColor(Long roomId, String userId, CardColor color);
+    void deleteByRoomId(Long roomId);
 }

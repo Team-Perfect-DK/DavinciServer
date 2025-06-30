@@ -57,11 +57,11 @@ public class Room {
     }
 
     public void assignNewHostIfNeeded() {
-        if (hostId == null && guestId != null) {
-            hostId = guestId;
-            hostNickname = guestNickname;
-            guestId = null;
-            guestNickname = null;
+        if (this.hostId == null && this.guestId != null) {
+            this.hostId = this.guestId;
+            this.hostNickname = this.guestNickname;
+            this.guestId = null;
+            this.guestNickname = null;
         }
     }
 
