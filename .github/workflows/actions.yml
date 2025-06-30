@@ -59,11 +59,13 @@ jobs:
     - name: Deploy to EC2
       run: |
         ssh -o StrictHostKeyChecking=no ubuntu@ec2-3-36-196-30.ap-northeast-2.compute.amazonaws.com << 'EOF'
+          set -e
           cd /davinci
           docker-compose stop spring
           docker-compose rm -f spring
           docker-compose pull
           docker-compose up -d --force-recreate spring
+          sleep 5
         EOF
     # NOTE: The Gradle Wrapper is the default and recommended way to run Gradle (https://docs.gradle.org/current/userguide/gradle_wrapper.html).
     # If your project does not have the Gradle Wrapper configured, you can use the following configuration to run Gradle with a specified version.
