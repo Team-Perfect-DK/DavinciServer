@@ -1,6 +1,7 @@
 package com.zziony.Davinci.controller;
 
 import com.zziony.Davinci.model.Room;
+import com.zziony.Davinci.model.RoomResponse;
 import com.zziony.Davinci.service.RoomService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -8,12 +9,12 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/rooms")
 public class RoomController {
     private final RoomService roomService;
-
     @Autowired
     public RoomController(RoomService roomService) {
         this.roomService = roomService;
@@ -36,8 +37,10 @@ public class RoomController {
 
     // 3. 대기 중인 방 리스트
     @GetMapping("/waiting")
-    public List<Room> getWaitingRooms() {
-        return roomService.getWaitingRooms();
+    public List<RoomResponse> getWaitingRooms() {
+        return roomService.getWaitingRooms().stream()
+                .map(RoomResponse::new)
+                .collect(Collectors.toList());
     }
 
     // 4. 특정 방 조회
