@@ -123,6 +123,7 @@ public class RoomService {
                     )
             );
             messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
+            notifyRoomUpdate();
         }
 
         if (room.isEmpty()) {

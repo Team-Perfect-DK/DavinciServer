@@ -34,12 +34,16 @@ public class RoomWebSocketController {
     @MessageMapping("/rooms/join")
     public void joinRoom(JoinRequest request) {
         Room room = roomService.joinRoom(request.getRoomCode(), request.getUserId());
+        // 해당 방 참여자에게만 전송
         messagingTemplate.convertAndSend(
                 "/topic/rooms/" + request.getRoomCode(),
-                Map.of(
-                        "action", "ROOM_UPDATED",
-                        "payload", room
-                )
+                Map.of("action", "ROOM_UPDATED", "payload", room)
+        );
+
+        // 전체 로비에 방 리스트 갱신 알림
+        messagingTemplate.convertAndSend(
+                "/topic/rooms/update",
+                Map.of("action", "ROOM_LIST_CHANGED")
         );
     }
 
@@ -116,4 +120,28 @@ public class RoomWebSocketController {
         String guessedColor = (String) message.get("guessedColor");
         roomService.processGuess(roomCode, userId, targetCardId, guessedNumber, guessedColor);
     }
+
+    // 방 나가기
+    @MessageMapping("/rooms/leave")
+    public void leaveRoom(Map<String, String> payload) {
+        String roomCode = payload.get("roomCode");
+        String userId = payload.get("userId");
+
+        if (roomCode != null && userId != null) {
+            roomService.leaveRoom(roomCode, userId);
+
+            // 방 상태 업데이트 브로드캐스트
+            messagingTemplate.convertAndSend(
+                    "/topic/rooms/" + roomCode,
+                    Map.of("action", "ROOM_UPDATED", "payload", roomService.findRoomByCode(roomCode).orElse(null))
+            );
+
+            // 전체 로비에도 방 변경 알림
+            messagingTemplate.convertAndSend(
+                    "/topic/rooms/update",
+                    Map.of("action", "ROOM_LIST_CHANGED")
+            );
+        }
+    }
+
 }
