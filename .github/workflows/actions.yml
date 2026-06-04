@@ -52,7 +52,7 @@ jobs:
         docker push ${{ secrets.DOCKER_USERNAME }}/davinci-spring:latest
         
     - name: Set up SSH
-      uses: webfactory/ssh-agent@v0.5.3
+      uses: webfactory/ssh-agent@v0.9.0
       with:
         ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
 
@@ -60,9 +60,16 @@ jobs:
       run: |
         ssh -o StrictHostKeyChecking=no ubuntu@15.164.246.199 << 'EOF'
           set -e
-          cd /davinci
-          docker compose stop spring
-          docker compose rm -f spring
+          cd /davinci/DavinciServer
+          git switch main
+          git pull origin main
+
+          export DOCKER_USERNAME="${{ secrets.DOCKER_USERNAME }}"
+
+          docker compose down --remove-orphans || true
+          docker rm -f davinci-spring || true
+          docker ps -q --filter "publish=9090" | xargs -r docker rm -f || true
+
           docker compose pull
           docker compose up -d --force-recreate spring
           sleep 5

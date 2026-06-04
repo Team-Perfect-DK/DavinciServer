@@ -1,0 +1,7 @@
+services:
+  spring:
+    image: ${DOCKER_USERNAME}/davinci-spring:latest
+    container_name: davinci-spring
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
