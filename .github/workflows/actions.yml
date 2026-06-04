@@ -61,10 +61,10 @@ jobs:
         ssh -o StrictHostKeyChecking=no ubuntu@15.164.246.199 << 'EOF'
           set -e
           cd /davinci
-          docker-compose stop spring
-          docker-compose rm -f spring
-          docker-compose pull
-          docker-compose up -d --force-recreate spring
+          docker compose stop spring
+          docker compose rm -f spring
+          docker compose pull
+          docker compose up -d --force-recreate spring
           sleep 5
         EOF
     # NOTE: The Gradle Wrapper is the default and recommended way to run Gradle (https://docs.gradle.org/current/userguide/gradle_wrapper.html).
