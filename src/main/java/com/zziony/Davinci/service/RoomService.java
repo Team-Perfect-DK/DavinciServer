@@ -11,8 +11,11 @@ import com.zziony.Davinci.repository.RoomRepository;
 import com.zziony.Davinci.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -315,5 +318,28 @@ public class RoomService {
                 "payload", getWaitingRooms()
         );
         messagingTemplate.convertAndSend("/topic/rooms/update", message);
+    }
+
+    @Scheduled(fixedRate = 21600000)
+    @Transactional
+    public void cleanupStaleRooms() {
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(6);
+        List<Room> roomsToDelete = roomRepository.findAll().stream()
+                .filter(room -> room.isEmpty() || isStaleWaitingRoom(room, cutoff))
+                .toList();
+
+        if (roomsToDelete.isEmpty()) {
+            return;
+        }
+
+        roomRepository.deleteAll(roomsToDelete);
+        notifyRoomUpdate();
+    }
+
+    private boolean isStaleWaitingRoom(Room room, LocalDateTime cutoff) {
+        LocalDateTime lastTouchedAt = room.getUpdatedAt() != null ? room.getUpdatedAt() : room.getCreatedAt();
+        return room.getStatus() == RoomStatus.WAITING
+                && lastTouchedAt != null
+                && lastTouchedAt.isBefore(cutoff);
     }
 }

@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Getter
@@ -33,6 +34,8 @@ public class Room {
     private String guestNickname;
     private String winnerId; // 위너 ID
     private String winnerNickname;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
     @Setter
     @Getter
     private String currentTurnPlayerId;
@@ -67,6 +70,18 @@ public class Room {
 
     public boolean isEmpty() {
         return hostId == null && guestId == null;
+    }
+
+    @PrePersist
+    public void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    @PreUpdate
+    public void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 
 }
