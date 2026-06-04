@@ -1,10 +1,9 @@
-# 1. Base 이미지로 OpenJDK 사용
-FROM openjdk:17-jdk-slim
+FROM eclipse-temurin:17-jre-jammy
 
-# 2. JAR 파일을 /app 디렉토리로 복사
-COPY build/libs/*.jar /app/demo.jar
+WORKDIR /app
 
-# 3. 애플리케이션을 실행하는 명령어
-ENTRYPOINT ["java", "-jar", "/app/demo.jar", "—spring.profiles.active=prod"]
+COPY build/libs/*.jar app.jar
 
 EXPOSE 9090
+
+ENTRYPOINT ["java", "-jar", "app.jar", "--spring.profiles.active=prod"]
