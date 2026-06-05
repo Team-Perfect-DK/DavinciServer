@@ -36,9 +36,12 @@ public class Room {
     private String winnerNickname;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime lastActiveAt;
     @Setter
     @Getter
     private String currentTurnPlayerId;
+    private boolean currentTurnHasDrawn;
+    private boolean currentTurnHasGuessed;
 
     public Room() {
         this.roomCode = UUID.randomUUID().toString().substring(0, 8); // 랜덤 방 코드
@@ -77,6 +80,7 @@ public class Room {
         LocalDateTime now = LocalDateTime.now();
         this.createdAt = now;
         this.updatedAt = now;
+        this.lastActiveAt = now;
     }
 
     @PreUpdate

@@ -85,11 +85,19 @@ public class RoomWebSocketController {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
         String nextTurnUserId = userId.equals(room.getHostId()) ? room.getGuestId() : room.getHostId();
+        String nextTurnUserNickname = nextTurnUserId.equals(room.getHostId())
+                ? room.getHostNickname()
+                : room.getGuestNickname();
         room.setCurrentTurnPlayerId(nextTurnUserId);
+        room.setCurrentTurnHasDrawn(false);
+        room.setCurrentTurnHasGuessed(false);
         roomRepository.save(room);
 
         messagingTemplate.convertAndSend("/topic/rooms/" + roomCode,
-                Map.of("action", "TURN_CHANGED", "payload", Map.of("nextTurnUserId", nextTurnUserId))
+                Map.of("action", "TURN_CHANGED", "payload", Map.of(
+                        "nextTurnUserId", nextTurnUserId,
+                        "nextTurnUserNickname", nextTurnUserNickname
+                ))
         );
     }
 

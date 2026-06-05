@@ -4,6 +4,8 @@ import com.zziony.Davinci.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,6 +32,16 @@ public class UserController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
+    }
+
+    @GetMapping("/session/{sessionId}")
+    public ResponseEntity<?> validateSession(@PathVariable String sessionId) {
+        return userService.getUserBySessionId(sessionId)
+                .<ResponseEntity<?>>map(user -> ResponseEntity.ok(Map.of(
+                        "nickname", user.getNickname(),
+                        "sessionId", user.getSessionId()
+                )))
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
 }

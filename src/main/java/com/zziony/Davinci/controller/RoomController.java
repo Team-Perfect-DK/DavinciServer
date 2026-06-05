@@ -22,10 +22,14 @@ public class RoomController {
 
     // 1. 방 생성
     @PostMapping("/create")
-    public Room createRoom(@RequestBody Map<String, String> request) {
+    public ResponseEntity<?> createRoom(@RequestBody Map<String, String> request) {
         String title = request.get("title");
         String hostId = request.get("hostId"); // 방장의 유저 ID
-        return roomService.createRoom(title, hostId);
+        try {
+            return ResponseEntity.ok(roomService.createRoom(title, hostId));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.status(401).body(Map.of("error", exception.getMessage()));
+        }
     }
 
     // 2. 방 참가
@@ -50,7 +54,24 @@ public class RoomController {
                 .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
     }
 
-    // 5. 방 나가기
+    // 5. 게임 상태 복구
+    @GetMapping("/{roomCode}/state")
+    public Map<String, Object> getGameState(@PathVariable String roomCode) {
+        return roomService.getGameState(roomCode);
+    }
+
+    // 6. 방 접속 상태 갱신
+    @PostMapping("/{roomCode}/heartbeat")
+    public ResponseEntity<Void> heartbeat(
+            @PathVariable String roomCode,
+            @RequestBody Map<String, String> request
+    ) {
+        return roomService.touchRoom(roomCode, request.get("userId"))
+                ? ResponseEntity.noContent().build()
+                : ResponseEntity.notFound().build();
+    }
+
+    // 7. 방 나가기
     @PostMapping("/{roomCode}/leave")
     public ResponseEntity<String> leaveRoom(@PathVariable("roomCode") String roomCode, @RequestBody Map<String, String> request) {
         String userId = request.get("userId");
