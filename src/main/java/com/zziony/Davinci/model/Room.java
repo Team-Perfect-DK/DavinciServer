@@ -37,6 +37,8 @@ public class Room {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime lastActiveAt;
+    private LocalDateTime hostLastActiveAt;
+    private LocalDateTime guestLastActiveAt;
     @Setter
     @Getter
     private String currentTurnPlayerId;
@@ -66,8 +68,10 @@ public class Room {
         if (this.hostId == null && this.guestId != null) {
             this.hostId = this.guestId;
             this.hostNickname = this.guestNickname;
+            this.hostLastActiveAt = this.guestLastActiveAt;
             this.guestId = null;
             this.guestNickname = null;
+            this.guestLastActiveAt = null;
         }
     }
 
@@ -81,6 +85,7 @@ public class Room {
         this.createdAt = now;
         this.updatedAt = now;
         this.lastActiveAt = now;
+        this.hostLastActiveAt = now;
     }
 
     @PreUpdate

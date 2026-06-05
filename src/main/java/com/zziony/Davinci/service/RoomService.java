@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,6 +71,7 @@ public class RoomService {
 
         room.setGuestId(guestId);
         room.setGuestNickname(guestNickname);
+        room.setGuestLastActiveAt(LocalDateTime.now());
 
         Room updatedRoom = roomRepository.save(room);
         roomRepository.saveAndFlush(room);
@@ -108,9 +110,11 @@ public class RoomService {
         if (isHost) {
             room.setHostId(null);
             room.setHostNickname(null);
+            room.setHostLastActiveAt(null);
         } else if (isGuest) {
             room.setGuestId(null);
             room.setGuestNickname(null);
+            room.setGuestLastActiveAt(null);
         }
 
         room.assignNewHostIfNeeded();
@@ -349,7 +353,12 @@ public class RoomService {
             return false;
         }
 
-        room.setLastActiveAt(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        if (userId.equals(room.getHostId())) {
+            room.setHostLastActiveAt(now);
+        } else {
+            room.setGuestLastActiveAt(now);
+        }
         roomRepository.save(room);
         return true;
     }
@@ -367,23 +376,78 @@ public class RoomService {
     @Transactional
     public void cleanupStaleRooms() {
         LocalDateTime cutoff = LocalDateTime.now().minusHours(6);
-        List<Room> roomsToDelete = roomRepository.findAll().stream()
-                .filter(room -> room.isEmpty() || isInactiveRoom(room, cutoff))
-                .toList();
+        List<Room> roomsToDelete = new ArrayList<>();
+        boolean roomsChanged = false;
 
-        if (roomsToDelete.isEmpty()) {
-            return;
+        for (Room room : roomRepository.findAll()) {
+            boolean playerRemoved = removeInactivePlayers(room, cutoff);
+
+            if (room.isEmpty()) {
+                cardService.resetCardsForRoom(room.getId());
+                roomsToDelete.add(room);
+                roomsChanged = true;
+                continue;
+            }
+
+            if (playerRemoved) {
+                room.assignNewHostIfNeeded();
+                room.setStatus(RoomStatus.WAITING);
+                room.setWinnerNickname(null);
+                roomRepository.save(room);
+                messagingTemplate.convertAndSend(
+                        "/topic/rooms/" + room.getRoomCode(),
+                        Map.of("action", "ROOM_UPDATED", "payload", room)
+                );
+                roomsChanged = true;
+            }
         }
 
-        roomsToDelete.forEach(room -> cardService.resetCardsForRoom(room.getId()));
-        roomRepository.deleteAll(roomsToDelete);
-        notifyRoomUpdate();
+        if (!roomsToDelete.isEmpty()) {
+            roomRepository.deleteAll(roomsToDelete);
+            roomsToDelete.forEach(room -> messagingTemplate.convertAndSend(
+                    "/topic/rooms/" + room.getRoomCode(),
+                    Map.of("action", "ROOM_DELETED", "payload", Map.of("roomCode", room.getRoomCode()))
+            ));
+        }
+
+        if (roomsChanged) {
+            notifyRoomUpdate();
+        }
     }
 
-    private boolean isInactiveRoom(Room room, LocalDateTime cutoff) {
-        LocalDateTime lastActiveAt = room.getLastActiveAt() != null
+    private boolean removeInactivePlayers(Room room, LocalDateTime cutoff) {
+        LocalDateTime legacyLastActiveAt = room.getLastActiveAt() != null
                 ? room.getLastActiveAt()
                 : room.getUpdatedAt() != null ? room.getUpdatedAt() : room.getCreatedAt();
+        boolean removed = false;
+
+        if (isInactivePlayer(room.getHostId(), room.getHostLastActiveAt(), legacyLastActiveAt, cutoff)) {
+            room.setHostId(null);
+            room.setHostNickname(null);
+            room.setHostLastActiveAt(null);
+            removed = true;
+        }
+
+        if (isInactivePlayer(room.getGuestId(), room.getGuestLastActiveAt(), legacyLastActiveAt, cutoff)) {
+            room.setGuestId(null);
+            room.setGuestNickname(null);
+            room.setGuestLastActiveAt(null);
+            removed = true;
+        }
+
+        return removed;
+    }
+
+    private boolean isInactivePlayer(
+            String playerId,
+            LocalDateTime playerLastActiveAt,
+            LocalDateTime legacyLastActiveAt,
+            LocalDateTime cutoff
+    ) {
+        if (playerId == null) {
+            return false;
+        }
+        LocalDateTime lastActiveAt = playerLastActiveAt != null ? playerLastActiveAt : legacyLastActiveAt;
         return lastActiveAt != null && lastActiveAt.isBefore(cutoff);
     }
 }
