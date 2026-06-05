@@ -38,10 +38,11 @@ public class UserController {
     public ResponseEntity<?> validateSession(@PathVariable String sessionId) {
         return userService.getUserBySessionId(sessionId)
                 .<ResponseEntity<?>>map(user -> ResponseEntity.ok(Map.of(
+                        "valid", true,
                         "nickname", user.getNickname(),
                         "sessionId", user.getSessionId()
                 )))
-                .orElseGet(() -> ResponseEntity.notFound().build());
+                .orElseGet(() -> ResponseEntity.ok(Map.of("valid", false)));
     }
 
 }
