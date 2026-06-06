@@ -21,7 +21,7 @@ public class CardService {
         this.cardRepository = cardRepository;
     }
 
-    public List<Card> distributeAndFetchCardsForRoom(Long roomId, String hostId, String guestId) {
+    public List<Card> distributeAndFetchCardsForRoom(Long roomId, List<String> playerIds) {
         List<Card> allCards = new ArrayList<>();
 
         // 흰색 0~11
@@ -36,12 +36,12 @@ public class CardService {
         // 카드 무작위 셔플
         Collections.shuffle(allCards);
 
-        // 4장씩 플레이어에게 할당
-        List<Card> hostCards = allCards.subList(0, 4);
-        List<Card> guestCards = allCards.subList(4, 8);
-
-        for (Card c : hostCards) c.setUserId(hostId);
-        for (Card c : guestCards) c.setUserId(guestId);
+        for (int playerIndex = 0; playerIndex < playerIds.size(); playerIndex++) {
+            int start = playerIndex * 4;
+            for (Card card : allCards.subList(start, start + 4)) {
+                card.setUserId(playerIds.get(playerIndex));
+            }
+        }
 
         // DB 저장
         cardRepository.saveAll(allCards);

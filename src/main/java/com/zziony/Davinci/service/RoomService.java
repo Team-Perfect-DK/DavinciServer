@@ -61,17 +61,20 @@ public class RoomService {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
 
-        if (room.getGuestId() != null) {
-            throw new RuntimeException("이미 방이 꽉 찼습니다.");
+        if (room.hasPlayer(guestId)) {
+            return room;
+        }
+        if (room.getStatus() != RoomStatus.WAITING || room.isFull()) {
+            throw new RuntimeException("입장할 수 없는 방입니다.");
         }
 
         User guest = userRepository.findBySessionId(guestId)
                 .orElseThrow(() -> new RuntimeException("Guest not found"));
         String guestNickname = guest.getNickname();
 
-        room.setGuestId(guestId);
-        room.setGuestNickname(guestNickname);
-        room.setGuestLastActiveAt(LocalDateTime.now());
+        if (!room.addPlayer(guestId, guestNickname, LocalDateTime.now())) {
+            throw new RuntimeException("이미 방이 꽉 찼습니다.");
+        }
 
         Room updatedRoom = roomRepository.save(room);
         roomRepository.saveAndFlush(room);
@@ -104,23 +107,10 @@ public class RoomService {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
 
-        boolean isHost = playerId.equals(room.getHostId());
-        boolean isGuest = playerId.equals(room.getGuestId());
-
-        if (isHost) {
-            room.setHostId(null);
-            room.setHostNickname(null);
-            room.setHostLastActiveAt(null);
-        } else if (isGuest) {
-            room.setGuestId(null);
-            room.setGuestNickname(null);
-            room.setGuestLastActiveAt(null);
-        }
-
-        room.assignNewHostIfNeeded();
+        room.removePlayer(playerId);
 
         // 게임 중이었고, 한명이라도 남아 있을 때 비정상 종료 처리
-        if (room.getStatus() == RoomStatus.PLAYING && (!room.isEmpty())) {
+        if (room.getStatus() == RoomStatus.PLAYING && !room.isEmpty()) {
             room.setStatus(RoomStatus.WAITING);
             room.setWinnerNickname(null);
             roomRepository.save(room);
@@ -160,12 +150,15 @@ public class RoomService {
     }
 
     // 게임 시작 (host부터 턴)
-    public List<Card> startGameAndGetCards(String roomCode) {
+    public List<Card> startGameAndGetCards(String roomCode, String userId) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
 
+        if (!room.getHostId().equals(userId)) {
+            throw new IllegalStateException("방장만 게임을 시작할 수 있습니다.");
+        }
         if (!room.canStartGame()) {
-            throw new IllegalStateException("게임을 시작하려면 두 명의 플레이어가 필요합니다.");
+            throw new IllegalStateException("게임을 시작하려면 두 명 이상의 플레이어가 필요합니다.");
         }
         cardService.resetCardsForRoom(room.getId());
         room.setStatus(RoomStatus.PLAYING);
@@ -173,7 +166,7 @@ public class RoomService {
         room.setCurrentTurnHasDrawn(false);
         room.setCurrentTurnHasGuessed(false);
 
-        List<Card> allCards = cardService.distributeAndFetchCardsForRoom(room.getId(), room.getHostId(), room.getGuestId());
+        List<Card> allCards = cardService.distributeAndFetchCardsForRoom(room.getId(), room.getPlayerIds());
 
         roomRepository.save(room);
         notifyRoomUpdate();
@@ -188,8 +181,7 @@ public class RoomService {
             // 맞췄으면 같은 유저가 한 번 더
             return userId;
         } else {
-            // 틀렸으면 상대방에게 턴
-            String next = userId.equals(room.getHostId()) ? room.getGuestId() : room.getHostId();
+            String next = getNextActivePlayer(room, userId);
             room.setCurrentTurnPlayerId(next);
             room.setCurrentTurnHasDrawn(false);
             room.setCurrentTurnHasGuessed(false);
@@ -202,6 +194,7 @@ public class RoomService {
     public void drawCard(String roomCode, String userId, String color) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
+        validateTurn(room, userId);
 
         CardColor wantColor;
         try {
@@ -249,6 +242,10 @@ public class RoomService {
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
         Card card = cardService.findCardById(targetCardId)
                 .orElseThrow(() -> new IllegalArgumentException("카드를 찾을 수 없습니다."));
+        validateTurn(room, userId);
+        if (card.getUserId() == null || card.getUserId().equals(userId) || !room.hasPlayer(card.getUserId())) {
+            throw new IllegalArgumentException("상대 플레이어의 타일만 추측할 수 있습니다.");
+        }
         Card openedCard = null;
         boolean correct = (card.getNumber() == guessedNumber);
         if (correct) {
@@ -257,28 +254,6 @@ public class RoomService {
             cardRepository.flush();
             openedCard = card;
 
-            String opponentId = userId.equals(room.getHostId()) ? room.getGuestId() : room.getHostId();
-            boolean opponentAllOpen = cardService.getCardsByUser(opponentId, card.getRoomId())
-                    .stream().allMatch(c -> c.getStatus() == CardStatus.OPEN);
-
-            if (opponentAllOpen) {
-                Room updatedRoom = roomRepository.findByRoomCode(roomCode)
-                        .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
-                updatedRoom.setStatus(RoomStatus.ENDED);
-                updatedRoom.setWinnerNickname(userRepository.findBySessionId(userId)
-                        .map(User::getNickname).orElse("UNKNOWN"));
-                roomRepository.save(updatedRoom);
-
-                cardService.resetCardsForRoom(updatedRoom.getId());
-
-                messagingTemplate.convertAndSend("/topic/rooms/" + roomCode,
-                        Map.of("action", "GAME_ENDED", "payload", Map.of(
-                                "winnerNickname", updatedRoom.getWinnerNickname()
-                        ))
-                );
-                notifyRoomUpdate();
-                return;
-            }
         } else {
             // 내 카드 중 CLOSE인 것 하나 OPEN
             List<Card> myCards = cardService.getCardsByUser(userId, card.getRoomId());
@@ -291,6 +266,9 @@ public class RoomService {
             }
         }
         // 턴 관리
+        if (finishGameIfOnlyOneActive(room, card.getRoomId())) {
+            return;
+        }
         String nextTurnUserId = processNextTurn(room, userId, correct);
 
         // 카드 맞추기 결과 broadcast
@@ -347,18 +325,11 @@ public class RoomService {
         }
         Room room = roomResult.get();
 
-        boolean isMember = userId != null
-                && (userId.equals(room.getHostId()) || userId.equals(room.getGuestId()));
-        if (!isMember) {
+        if (!room.hasPlayer(userId)) {
             return false;
         }
 
-        LocalDateTime now = LocalDateTime.now();
-        if (userId.equals(room.getHostId())) {
-            room.setHostLastActiveAt(now);
-        } else {
-            room.setGuestLastActiveAt(now);
-        }
+        room.touchPlayer(userId, LocalDateTime.now());
         roomRepository.save(room);
         return true;
     }
@@ -421,21 +392,77 @@ public class RoomService {
                 : room.getUpdatedAt() != null ? room.getUpdatedAt() : room.getCreatedAt();
         boolean removed = false;
 
-        if (isInactivePlayer(room.getHostId(), room.getHostLastActiveAt(), legacyLastActiveAt, cutoff)) {
-            room.setHostId(null);
-            room.setHostNickname(null);
-            room.setHostLastActiveAt(null);
-            removed = true;
-        }
-
-        if (isInactivePlayer(room.getGuestId(), room.getGuestLastActiveAt(), legacyLastActiveAt, cutoff)) {
-            room.setGuestId(null);
-            room.setGuestNickname(null);
-            room.setGuestLastActiveAt(null);
-            removed = true;
+        for (int seat = 1; seat <= 4; seat++) {
+            if (isInactivePlayer(room.getPlayerId(seat), room.getPlayerLastActiveAt(seat), legacyLastActiveAt, cutoff)) {
+                room.clearPlayer(seat);
+                removed = true;
+            }
         }
 
         return removed;
+    }
+
+    public String moveToNextTurn(String roomCode, String userId) {
+        Room room = roomRepository.findByRoomCode(roomCode)
+                .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
+        validateTurn(room, userId);
+        String next = getNextActivePlayer(room, userId);
+        room.setCurrentTurnPlayerId(next);
+        room.setCurrentTurnHasDrawn(false);
+        room.setCurrentTurnHasGuessed(false);
+        roomRepository.save(room);
+        return next;
+    }
+
+    public String getPlayerNickname(String roomCode, String userId) {
+        return roomRepository.findByRoomCode(roomCode)
+                .map(room -> room.getNickname(userId))
+                .orElse(null);
+    }
+
+    private String getNextActivePlayer(Room room, String currentUserId) {
+        List<String> players = room.getPlayerIds();
+        if (players.isEmpty()) return null;
+
+        int currentIndex = players.indexOf(currentUserId);
+        for (int offset = 1; offset <= players.size(); offset++) {
+            String candidate = players.get((Math.max(currentIndex, 0) + offset) % players.size());
+            if (!cardService.hasUserLost(candidate, room.getId())) {
+                return candidate;
+            }
+        }
+        return currentUserId;
+    }
+
+    private void validateTurn(Room room, String userId) {
+        if (room.getStatus() != RoomStatus.PLAYING
+                || userId == null
+                || !userId.equals(room.getCurrentTurnPlayerId())) {
+            throw new IllegalStateException("현재 턴인 플레이어만 행동할 수 있습니다.");
+        }
+    }
+
+    private boolean finishGameIfOnlyOneActive(Room room, Long roomId) {
+        List<String> activePlayers = room.getPlayerIds().stream()
+                .filter(playerId -> !cardService.hasUserLost(playerId, roomId))
+                .toList();
+        if (activePlayers.size() != 1) {
+            return false;
+        }
+
+        String winnerId = activePlayers.get(0);
+        room.setStatus(RoomStatus.ENDED);
+        room.setWinnerId(winnerId);
+        room.setWinnerNickname(room.getNickname(winnerId));
+        roomRepository.save(room);
+        cardService.resetCardsForRoom(room.getId());
+        messagingTemplate.convertAndSend("/topic/rooms/" + room.getRoomCode(),
+                Map.of("action", "GAME_ENDED", "payload", Map.of(
+                        "winnerNickname", room.getWinnerNickname()
+                ))
+        );
+        notifyRoomUpdate();
+        return true;
     }
 
     private boolean isInactivePlayer(

@@ -2,6 +2,7 @@ package com.zziony.Davinci.model.ws;
 
 public class StartRequest {
     private String roomCode;
+    private String userId;
 
     public StartRequest() {
         // 기본 생성자
@@ -13,5 +14,13 @@ public class StartRequest {
 
     public void setRoomCode(String roomCode) {
         this.roomCode = roomCode;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
     }
 }

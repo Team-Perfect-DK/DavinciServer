@@ -102,6 +102,23 @@ class RoomServiceTest {
         verify(roomRepository, never()).save(room);
     }
 
+    @Test
+    void passTurnSkipsAnEliminatedPlayer() {
+        Room room = roomWithTwoPlayers();
+        room.addPlayer("player-3", "three", LocalDateTime.now());
+        room.setStatus(RoomStatus.PLAYING);
+        room.setCurrentTurnPlayerId("host-id");
+        when(roomRepository.findByRoomCode(room.getRoomCode())).thenReturn(Optional.of(room));
+        when(cardService.hasUserLost("guest-id", room.getId())).thenReturn(true);
+        when(cardService.hasUserLost("player-3", room.getId())).thenReturn(false);
+
+        String nextPlayer = roomService.moveToNextTurn(room.getRoomCode(), "host-id");
+
+        assertEquals("player-3", nextPlayer);
+        assertEquals("player-3", room.getCurrentTurnPlayerId());
+        verify(roomRepository).save(room);
+    }
+
     private Room roomWithTwoPlayers() {
         Room room = new Room("test room", "host-id", "host");
         room.setId(1L);

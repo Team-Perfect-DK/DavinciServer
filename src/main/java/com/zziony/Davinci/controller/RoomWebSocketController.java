@@ -51,7 +51,7 @@ public class RoomWebSocketController {
     @MessageMapping("/rooms/start")
     public void startGame(StartRequest request) {
         Room room = roomService.findRoomByCode(request.getRoomCode()).orElseThrow();
-        List<Card> allCards = roomService.startGameAndGetCards(request.getRoomCode());
+        List<Card> allCards = roomService.startGameAndGetCards(request.getRoomCode(), request.getUserId());
         String currentTurnPlayerId = room.getHostId();
         String currentTurnPlayerNickname = room.getHostNickname();
         messagingTemplate.convertAndSend(
@@ -84,14 +84,8 @@ public class RoomWebSocketController {
         String userId = message.get("userId");
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
-        String nextTurnUserId = userId.equals(room.getHostId()) ? room.getGuestId() : room.getHostId();
-        String nextTurnUserNickname = nextTurnUserId.equals(room.getHostId())
-                ? room.getHostNickname()
-                : room.getGuestNickname();
-        room.setCurrentTurnPlayerId(nextTurnUserId);
-        room.setCurrentTurnHasDrawn(false);
-        room.setCurrentTurnHasGuessed(false);
-        roomRepository.save(room);
+        String nextTurnUserId = roomService.moveToNextTurn(roomCode, userId);
+        String nextTurnUserNickname = roomService.getPlayerNickname(roomCode, nextTurnUserId);
 
         messagingTemplate.convertAndSend("/topic/rooms/" + roomCode,
                 Map.of("action", "TURN_CHANGED", "payload", Map.of(
