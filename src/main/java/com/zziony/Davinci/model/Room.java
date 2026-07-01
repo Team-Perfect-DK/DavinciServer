@@ -40,6 +40,8 @@ public class Room {
     private String player4Nickname;
     private String winnerId; // 위너 ID
     private String winnerNickname;
+    @Column(length = 1000)
+    private String eliminatedPlayerIds;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime lastActiveAt;
@@ -157,6 +159,40 @@ public class Room {
             }
         }
         return null;
+    }
+
+    @Transient
+    public List<String> getEliminatedPlayerIdsList() {
+        List<String> eliminatedPlayers = new ArrayList<>();
+        if (eliminatedPlayerIds == null || eliminatedPlayerIds.isBlank()) {
+            return eliminatedPlayers;
+        }
+
+        for (String playerId : eliminatedPlayerIds.split(",")) {
+            if (!playerId.isBlank()) {
+                eliminatedPlayers.add(playerId);
+            }
+        }
+        return eliminatedPlayers;
+    }
+
+    public boolean isPlayerEliminated(String userId) {
+        return userId != null && getEliminatedPlayerIdsList().contains(userId);
+    }
+
+    public boolean addEliminatedPlayer(String userId) {
+        if (userId == null || isPlayerEliminated(userId)) {
+            return false;
+        }
+
+        List<String> eliminatedPlayers = getEliminatedPlayerIdsList();
+        eliminatedPlayers.add(userId);
+        eliminatedPlayerIds = String.join(",", eliminatedPlayers);
+        return true;
+    }
+
+    public void resetEliminatedPlayers() {
+        eliminatedPlayerIds = null;
     }
 
     public void touchPlayer(String userId, LocalDateTime activeAt) {

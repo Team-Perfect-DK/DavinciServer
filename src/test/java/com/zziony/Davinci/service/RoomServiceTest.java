@@ -17,9 +17,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -68,7 +66,7 @@ class RoomServiceTest {
     }
 
     @Test
-    void cleanupPromotesActiveGuestWhenHostIsInactive() {
+    void cleanupDeletesRoomWhenAnyPlayerIsInactive() {
         Room room = roomWithTwoPlayers();
         LocalDateTime guestLastActiveAt = LocalDateTime.now().minusHours(1);
         room.setStatus(RoomStatus.PLAYING);
@@ -78,14 +76,9 @@ class RoomServiceTest {
 
         roomService.cleanupStaleRooms();
 
-        assertEquals("guest-id", room.getHostId());
-        assertEquals("guest", room.getHostNickname());
-        assertEquals(guestLastActiveAt, room.getHostLastActiveAt());
-        assertNull(room.getGuestId());
-        assertNull(room.getGuestLastActiveAt());
-        assertEquals(RoomStatus.WAITING, room.getStatus());
-        verify(roomRepository).save(room);
-        verify(roomRepository, never()).deleteAll(anyList());
+        verify(cardService).resetCardsForRoom(room.getId());
+        verify(roomRepository).deleteAll(List.of(room));
+        verify(roomRepository, never()).save(room);
     }
 
     @Test
@@ -103,6 +96,30 @@ class RoomServiceTest {
     }
 
     @Test
+    void leaveRoomDeletesTheRoom() {
+        Room room = roomWithTwoPlayers();
+        when(roomRepository.findByRoomCode(room.getRoomCode())).thenReturn(Optional.of(room));
+
+        roomService.leaveRoom(room.getRoomCode(), room.getHostId());
+
+        verify(cardService).resetCardsForRoom(room.getId());
+        verify(roomRepository).delete(room);
+        verify(roomRepository, never()).save(room);
+    }
+
+    @Test
+    void deleteRoomDeletesTheRoomWhenUserIsMember() {
+        Room room = roomWithTwoPlayers();
+        when(roomRepository.findByRoomCode(room.getRoomCode())).thenReturn(Optional.of(room));
+
+        assertTrue(roomService.deleteRoom(room.getRoomCode(), room.getGuestId()));
+
+        verify(cardService).resetCardsForRoom(room.getId());
+        verify(roomRepository).delete(room);
+        verify(roomRepository, never()).save(room);
+    }
+
+    @Test
     void passTurnSkipsAnEliminatedPlayer() {
         Room room = roomWithTwoPlayers();
         room.addPlayer("player-3", "three", LocalDateTime.now());
@@ -116,6 +133,22 @@ class RoomServiceTest {
 
         assertEquals("player-3", nextPlayer);
         assertEquals("player-3", room.getCurrentTurnPlayerId());
+        verify(roomRepository).save(room);
+    }
+
+    @Test
+    void correctGuessMovesTurnWhenCurrentPlayerIsEliminated() {
+        Room room = roomWithTwoPlayers();
+        room.addPlayer("player-3", "three", LocalDateTime.now());
+        room.setStatus(RoomStatus.PLAYING);
+        room.setCurrentTurnPlayerId("host-id");
+        when(cardService.hasUserLost("host-id", room.getId())).thenReturn(true);
+        when(cardService.hasUserLost("guest-id", room.getId())).thenReturn(false);
+
+        String nextPlayer = roomService.processNextTurn(room, "host-id", true);
+
+        assertEquals("guest-id", nextPlayer);
+        assertEquals("guest-id", room.getCurrentTurnPlayerId());
         verify(roomRepository).save(room);
     }
 

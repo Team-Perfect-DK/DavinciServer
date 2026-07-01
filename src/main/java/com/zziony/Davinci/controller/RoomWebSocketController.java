@@ -131,18 +131,6 @@ public class RoomWebSocketController {
 
         if (roomCode != null && userId != null) {
             roomService.leaveRoom(roomCode, userId);
-
-            // 방 상태 업데이트 브로드캐스트
-            messagingTemplate.convertAndSend(
-                    "/topic/rooms/" + roomCode,
-                    Map.of("action", "ROOM_UPDATED", "payload", roomService.findRoomByCode(roomCode).orElse(null))
-            );
-
-            // 전체 로비에도 방 변경 알림
-            messagingTemplate.convertAndSend(
-                    "/topic/rooms/update",
-                    Map.of("action", "ROOM_LIST_CHANGED")
-            );
         }
     }
 

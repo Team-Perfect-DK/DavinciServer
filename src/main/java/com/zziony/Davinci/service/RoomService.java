@@ -107,49 +107,30 @@ public class RoomService {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
 
-        room.removePlayer(playerId);
-
-        // 게임 중이었고, 한명이라도 남아 있을 때 비정상 종료 처리
-        if (room.getStatus() == RoomStatus.PLAYING && !room.isEmpty()) {
-            room.setStatus(RoomStatus.WAITING);
-            room.setWinnerNickname(null);
-            roomRepository.save(room);
-
-            // 남아있는 유저에게 알림 전송 (비정상 종료)
-            Map<String, Object> message = Map.of(
-                    "action", "GAME_RESET",
-                    "payload", Map.of(
-                            "reason", "상대방이 게임을 나가 게임이 리셋되었습니다.",
-                            "roomCode", roomCode
-                    )
-            );
-            messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
-            notifyRoomUpdate();
+        if (!room.hasPlayer(playerId)) {
+            throw new RuntimeException("Player is not in the room.");
         }
 
-        if (room.isEmpty()) {
-            roomRepository.delete(room);
-            Map<String, Object> message = Map.of(
-                    "action", "ROOM_DELETED",
-                    "payload", Map.of("roomCode", roomCode)
-            );
-            messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
-            notifyRoomUpdate();
-        } else {
-            room.setStatus(RoomStatus.WAITING);
-            room.setWinnerNickname(null);
-            roomRepository.save(room);
-            Map<String, Object> message = Map.of(
-                    "action", "ROOM_UPDATED",
-                    "payload", room
-            );
-            messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
-            notifyRoomUpdate();
-        }
+        deleteRoom(room);
         return room;
     }
 
     // 게임 시작 (host부터 턴)
+    public boolean deleteRoom(String roomCode, String userId) {
+        Optional<Room> roomResult = roomRepository.findByRoomCode(roomCode);
+        if (roomResult.isEmpty()) {
+            return false;
+        }
+
+        Room room = roomResult.get();
+        if (!room.hasPlayer(userId)) {
+            return false;
+        }
+
+        deleteRoom(room);
+        return true;
+    }
+
     public List<Card> startGameAndGetCards(String roomCode, String userId) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
@@ -165,6 +146,7 @@ public class RoomService {
         room.setCurrentTurnPlayerId(room.getHostId());
         room.setCurrentTurnHasDrawn(false);
         room.setCurrentTurnHasGuessed(false);
+        room.resetEliminatedPlayers();
 
         List<Card> allCards = cardService.distributeAndFetchCardsForRoom(room.getId(), room.getPlayerIds());
 
@@ -175,19 +157,19 @@ public class RoomService {
 
     // Copilot 방식: 맞췄는지/틀렸는지에 따라 턴 유지/전환
     public String processNextTurn(Room room, String userId, boolean correct) {
-        if (correct) {
+        if (correct && !cardService.hasUserLost(userId, room.getId())) {
             room.setCurrentTurnHasGuessed(true);
             roomRepository.save(room);
             // 맞췄으면 같은 유저가 한 번 더
             return userId;
-        } else {
-            String next = getNextActivePlayer(room, userId);
-            room.setCurrentTurnPlayerId(next);
-            room.setCurrentTurnHasDrawn(false);
-            room.setCurrentTurnHasGuessed(false);
-            roomRepository.save(room);
-            return next;
         }
+
+        String next = getNextActivePlayer(room, userId);
+        room.setCurrentTurnPlayerId(next);
+        room.setCurrentTurnHasDrawn(false);
+        room.setCurrentTurnHasGuessed(false);
+        roomRepository.save(room);
+        return next;
     }
 
     // 카드 한 장 가져가기
@@ -266,6 +248,7 @@ public class RoomService {
             }
         }
         // 턴 관리
+        List<Map<String, Object>> eliminatedPlayers = recordNewlyEliminatedPlayers(room);
         if (finishGameIfOnlyOneActive(room, card.getRoomId())) {
             return;
         }
@@ -280,6 +263,7 @@ public class RoomService {
         result.put("guessedNumber", guessedNumber);
         result.put("correct", correct);
         result.put("nextTurnUserId", nextTurnUserId);
+        result.put("eliminatedPlayers", eliminatedPlayers);
         result.put("nextTurnUserNickname", userRepository.findBySessionId(nextTurnUserId)
                 .map(User::getNickname).orElse("알 수 없음"));
 
@@ -348,28 +332,10 @@ public class RoomService {
     public void cleanupStaleRooms() {
         LocalDateTime cutoff = LocalDateTime.now().minusHours(6);
         List<Room> roomsToDelete = new ArrayList<>();
-        boolean roomsChanged = false;
-
         for (Room room : roomRepository.findAll()) {
-            boolean playerRemoved = removeInactivePlayers(room, cutoff);
-
-            if (room.isEmpty()) {
+            if (room.isEmpty() || hasInactivePlayer(room, cutoff)) {
                 cardService.resetCardsForRoom(room.getId());
                 roomsToDelete.add(room);
-                roomsChanged = true;
-                continue;
-            }
-
-            if (playerRemoved) {
-                room.assignNewHostIfNeeded();
-                room.setStatus(RoomStatus.WAITING);
-                room.setWinnerNickname(null);
-                roomRepository.save(room);
-                messagingTemplate.convertAndSend(
-                        "/topic/rooms/" + room.getRoomCode(),
-                        Map.of("action", "ROOM_UPDATED", "payload", room)
-                );
-                roomsChanged = true;
             }
         }
 
@@ -381,25 +347,23 @@ public class RoomService {
             ));
         }
 
-        if (roomsChanged) {
+        if (!roomsToDelete.isEmpty()) {
             notifyRoomUpdate();
         }
     }
 
-    private boolean removeInactivePlayers(Room room, LocalDateTime cutoff) {
+    private boolean hasInactivePlayer(Room room, LocalDateTime cutoff) {
         LocalDateTime legacyLastActiveAt = room.getLastActiveAt() != null
                 ? room.getLastActiveAt()
                 : room.getUpdatedAt() != null ? room.getUpdatedAt() : room.getCreatedAt();
-        boolean removed = false;
 
         for (int seat = 1; seat <= 4; seat++) {
             if (isInactivePlayer(room.getPlayerId(seat), room.getPlayerLastActiveAt(seat), legacyLastActiveAt, cutoff)) {
-                room.clearPlayer(seat);
-                removed = true;
+                return true;
             }
         }
 
-        return removed;
+        return false;
     }
 
     public String moveToNextTurn(String roomCode, String userId) {
@@ -454,15 +418,62 @@ public class RoomService {
         room.setStatus(RoomStatus.ENDED);
         room.setWinnerId(winnerId);
         room.setWinnerNickname(room.getNickname(winnerId));
+        List<Map<String, Object>> rankings = buildRankings(room, winnerId);
         roomRepository.save(room);
         cardService.resetCardsForRoom(room.getId());
         messagingTemplate.convertAndSend("/topic/rooms/" + room.getRoomCode(),
                 Map.of("action", "GAME_ENDED", "payload", Map.of(
-                        "winnerNickname", room.getWinnerNickname()
+                        "winnerNickname", room.getWinnerNickname(),
+                        "rankings", rankings
                 ))
         );
         notifyRoomUpdate();
         return true;
+    }
+
+    private List<Map<String, Object>> recordNewlyEliminatedPlayers(Room room) {
+        List<Map<String, Object>> eliminatedPlayers = new ArrayList<>();
+
+        for (String playerId : room.getPlayerIds()) {
+            if (cardService.hasUserLost(playerId, room.getId()) && room.addEliminatedPlayer(playerId)) {
+                eliminatedPlayers.add(buildRankingEntry(0, playerId, room.getNickname(playerId)));
+            }
+        }
+
+        return eliminatedPlayers;
+    }
+
+    private List<Map<String, Object>> buildRankings(Room room, String winnerId) {
+        List<Map<String, Object>> rankings = new ArrayList<>();
+        int rank = 1;
+
+        rankings.add(buildRankingEntry(rank++, winnerId, room.getNickname(winnerId)));
+
+        List<String> eliminatedPlayerIds = room.getEliminatedPlayerIdsList();
+        for (int index = eliminatedPlayerIds.size() - 1; index >= 0; index--) {
+            String playerId = eliminatedPlayerIds.get(index);
+            if (!playerId.equals(winnerId)) {
+                rankings.add(buildRankingEntry(rank++, playerId, room.getNickname(playerId)));
+            }
+        }
+
+        for (String playerId : room.getPlayerIds()) {
+            boolean alreadyRanked = rankings.stream()
+                    .anyMatch(ranking -> playerId.equals(ranking.get("userId")));
+            if (!alreadyRanked) {
+                rankings.add(buildRankingEntry(rank++, playerId, room.getNickname(playerId)));
+            }
+        }
+
+        return rankings;
+    }
+
+    private Map<String, Object> buildRankingEntry(int rank, String userId, String nickname) {
+        Map<String, Object> ranking = new HashMap<>();
+        ranking.put("rank", rank);
+        ranking.put("userId", userId);
+        ranking.put("nickname", nickname != null ? nickname : "알 수 없음");
+        return ranking;
     }
 
     private boolean isInactivePlayer(
@@ -476,5 +487,15 @@ public class RoomService {
         }
         LocalDateTime lastActiveAt = playerLastActiveAt != null ? playerLastActiveAt : legacyLastActiveAt;
         return lastActiveAt != null && lastActiveAt.isBefore(cutoff);
+    }
+
+    private void deleteRoom(Room room) {
+        cardService.resetCardsForRoom(room.getId());
+        roomRepository.delete(room);
+        messagingTemplate.convertAndSend(
+                "/topic/rooms/" + room.getRoomCode(),
+                Map.of("action", "ROOM_DELETED", "payload", Map.of("roomCode", room.getRoomCode()))
+        );
+        notifyRoomUpdate();
     }
 }
