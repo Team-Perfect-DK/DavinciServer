@@ -68,6 +68,57 @@ class RoomServiceTest {
     }
 
     @Test
+    void leaveRoomPromotesGuestAndKeepsUsersWhenHostLeaves() {
+        Room room = roomWithTwoPlayers();
+        when(roomRepository.findByRoomCode(room.getRoomCode())).thenReturn(Optional.of(room));
+
+        roomService.leaveRoom(room.getRoomCode(), room.getHostId());
+
+        assertEquals("guest-id", room.getHostId());
+        assertEquals("guest", room.getHostNickname());
+        assertEquals(RoomStatus.WAITING, room.getStatus());
+        verify(roomRepository).save(room);
+        verify(roomRepository, never()).delete(room);
+        verify(userRepository, never()).findBySessionId(room.getHostId());
+    }
+
+    @Test
+    void leaveRoomKeepsHostWhenGuestLeaves() {
+        Room room = roomWithTwoPlayers();
+        when(roomRepository.findByRoomCode(room.getRoomCode())).thenReturn(Optional.of(room));
+
+        roomService.leaveRoom(room.getRoomCode(), room.getGuestId());
+
+        assertEquals("host-id", room.getHostId());
+        assertEquals("host", room.getHostNickname());
+        assertEquals(RoomStatus.WAITING, room.getStatus());
+        verify(roomRepository).save(room);
+        verify(roomRepository, never()).delete(room);
+        verify(userRepository, never()).findBySessionId(room.getHostId());
+    }
+
+    @Test
+    void leaveRoomResetsPlayingRoomToWaitingForRemainingPlayer() {
+        Room room = roomWithTwoPlayers();
+        room.setStatus(RoomStatus.PLAYING);
+        room.setCurrentTurnPlayerId(room.getGuestId());
+        room.setCurrentTurnHasDrawn(true);
+        room.setCurrentTurnHasGuessed(true);
+        when(roomRepository.findByRoomCode(room.getRoomCode())).thenReturn(Optional.of(room));
+
+        roomService.leaveRoom(room.getRoomCode(), room.getGuestId());
+
+        assertEquals("host-id", room.getHostId());
+        assertEquals(RoomStatus.WAITING, room.getStatus());
+        assertEquals(null, room.getCurrentTurnPlayerId());
+        assertEquals(false, room.isCurrentTurnHasDrawn());
+        assertEquals(false, room.isCurrentTurnHasGuessed());
+        verify(cardService).resetCardsForRoom(room.getId());
+        verify(roomRepository).save(room);
+        verify(roomRepository, never()).delete(room);
+    }
+
+    @Test
     void cleanupDeletesRoomWhenAnyPlayerIsInactive() {
         Room room = roomWithTwoPlayers();
         room.setStatus(RoomStatus.PLAYING);
