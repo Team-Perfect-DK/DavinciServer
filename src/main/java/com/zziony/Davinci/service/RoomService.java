@@ -106,11 +106,6 @@ public class RoomService {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
 
-        if (room.isPlayer(playerId)) {
-            deleteRoom(room);
-            return room;
-        }
-
         boolean isHost = playerId.equals(room.getHostId());
         boolean isGuest = playerId.equals(room.getGuestId());
 
@@ -128,9 +123,12 @@ public class RoomService {
 
         // 게임 중이었고, 한명이라도 남아 있을 때 비정상 종료 처리
         if (room.getStatus() == RoomStatus.PLAYING && (!room.isEmpty())) {
+            cardService.resetCardsForRoom(room.getId());
             room.setStatus(RoomStatus.WAITING);
             room.setWinnerNickname(null);
-            roomRepository.save(room);
+            room.setCurrentTurnPlayerId(null);
+            room.setCurrentTurnHasDrawn(false);
+            room.setCurrentTurnHasGuessed(false);
 
             // 남아있는 유저에게 알림 전송 (비정상 종료)
             Map<String, Object> message = Map.of(
@@ -141,7 +139,6 @@ public class RoomService {
                     )
             );
             messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
-            notifyRoomUpdate();
         }
 
         if (room.isEmpty()) {
@@ -175,7 +172,7 @@ public class RoomService {
             throw new IllegalArgumentException("방을 삭제할 권한이 없습니다.");
         }
 
-        deleteRoom(room);
+        deleteRoom(room, true);
     }
 
     public List<Card> startGameAndGetCards(String roomCode) {
@@ -438,10 +435,12 @@ public class RoomService {
         return lastActiveAt != null && lastActiveAt.isBefore(cutoff);
     }
 
-    private void deleteRoom(Room room) {
+    private void deleteRoom(Room room, boolean deleteUsers) {
         cardService.resetCardsForRoom(room.getId());
         roomRepository.delete(room);
-        deleteUsersForRoom(room);
+        if (deleteUsers) {
+            deleteUsersForRoom(room);
+        }
         messagingTemplate.convertAndSend(
                 "/topic/rooms/" + room.getRoomCode(),
                 Map.of("action", "ROOM_DELETED", "payload", Map.of("roomCode", room.getRoomCode()))
