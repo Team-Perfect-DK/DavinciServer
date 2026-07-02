@@ -11,15 +11,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 
+import java.lang.reflect.Method;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -54,8 +54,8 @@ class RoomServiceTest {
     @Test
     void heartbeatUpdatesOnlyTheSendingPlayer() {
         Room room = roomWithTwoPlayers();
-        LocalDateTime hostLastActiveAt = LocalDateTime.now().minusHours(3);
-        LocalDateTime guestLastActiveAt = LocalDateTime.now().minusHours(3);
+        LocalDateTime hostLastActiveAt = LocalDateTime.now().minusHours(2);
+        LocalDateTime guestLastActiveAt = LocalDateTime.now().minusHours(2);
         room.setHostLastActiveAt(hostLastActiveAt);
         room.setGuestLastActiveAt(guestLastActiveAt);
         when(roomRepository.findByRoomCode(room.getRoomCode())).thenReturn(Optional.of(room));
@@ -68,38 +68,57 @@ class RoomServiceTest {
     }
 
     @Test
-    void cleanupPromotesActiveGuestWhenHostIsInactive() {
+    void cleanupDeletesRoomWhenAnyPlayerIsInactive() {
         Room room = roomWithTwoPlayers();
-        LocalDateTime guestLastActiveAt = LocalDateTime.now().minusHours(1);
         room.setStatus(RoomStatus.PLAYING);
-        room.setHostLastActiveAt(LocalDateTime.now().minusHours(7));
-        room.setGuestLastActiveAt(guestLastActiveAt);
+        room.setHostLastActiveAt(LocalDateTime.now().minusHours(4));
+        room.setGuestLastActiveAt(LocalDateTime.now().minusHours(1));
         when(roomRepository.findAll()).thenReturn(List.of(room));
-
-        roomService.cleanupStaleRooms();
-
-        assertEquals("guest-id", room.getHostId());
-        assertEquals("guest", room.getHostNickname());
-        assertEquals(guestLastActiveAt, room.getHostLastActiveAt());
-        assertNull(room.getGuestId());
-        assertNull(room.getGuestLastActiveAt());
-        assertEquals(RoomStatus.WAITING, room.getStatus());
-        verify(roomRepository).save(room);
-        verify(roomRepository, never()).deleteAll(anyList());
-    }
-
-    @Test
-    void cleanupDeletesRoomWhenBothPlayersAreInactive() {
-        Room room = roomWithTwoPlayers();
-        room.setHostLastActiveAt(LocalDateTime.now().minusHours(7));
-        room.setGuestLastActiveAt(LocalDateTime.now().minusHours(7));
-        when(roomRepository.findAll()).thenReturn(List.of(room));
+        when(userRepository.findBySessionId(room.getHostId())).thenReturn(Optional.empty());
+        when(userRepository.findBySessionId(room.getGuestId())).thenReturn(Optional.empty());
 
         roomService.cleanupStaleRooms();
 
         verify(cardService).resetCardsForRoom(room.getId());
         verify(roomRepository).deleteAll(List.of(room));
         verify(roomRepository, never()).save(room);
+    }
+
+    @Test
+    void cleanupDeletesRoomWhenBothPlayersAreInactive() {
+        Room room = roomWithTwoPlayers();
+        room.setHostLastActiveAt(LocalDateTime.now().minusHours(4));
+        room.setGuestLastActiveAt(LocalDateTime.now().minusHours(4));
+        when(roomRepository.findAll()).thenReturn(List.of(room));
+        when(userRepository.findBySessionId(room.getHostId())).thenReturn(Optional.empty());
+        when(userRepository.findBySessionId(room.getGuestId())).thenReturn(Optional.empty());
+
+        roomService.cleanupStaleRooms();
+
+        verify(cardService).resetCardsForRoom(room.getId());
+        verify(roomRepository).deleteAll(List.of(room));
+        verify(roomRepository, never()).save(room);
+    }
+
+    @Test
+    void cleanupRunsEveryThirtyMinutes() throws NoSuchMethodException {
+        Method cleanupMethod = RoomService.class.getDeclaredMethod("cleanupStaleRooms");
+        Scheduled scheduled = cleanupMethod.getAnnotation(Scheduled.class);
+
+        assertEquals(1_800_000L, scheduled.fixedRate());
+    }
+
+    @Test
+    void cleanupDoesNotDeleteRoomBeforeThreeHoursOfInactivity() {
+        Room room = roomWithTwoPlayers();
+        room.setHostLastActiveAt(LocalDateTime.now().minusMinutes(6));
+        room.setGuestLastActiveAt(LocalDateTime.now().minusMinutes(6));
+        when(roomRepository.findAll()).thenReturn(List.of(room));
+
+        roomService.cleanupStaleRooms();
+
+        verify(cardService, never()).resetCardsForRoom(room.getId());
+        verify(roomRepository, never()).deleteAll(List.of(room));
     }
 
     private Room roomWithTwoPlayers() {

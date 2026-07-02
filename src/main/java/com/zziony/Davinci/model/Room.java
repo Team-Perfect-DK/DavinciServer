@@ -79,6 +79,10 @@ public class Room {
         return hostId == null && guestId == null;
     }
 
+    public boolean isPlayer(String playerId) {
+        return playerId != null && (playerId.equals(hostId) || playerId.equals(guestId));
+    }
+
     @PrePersist
     public void onCreate() {
         LocalDateTime now = LocalDateTime.now();

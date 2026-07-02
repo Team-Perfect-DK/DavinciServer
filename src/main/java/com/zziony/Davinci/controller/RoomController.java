@@ -79,4 +79,11 @@ public class RoomController {
         return ResponseEntity.ok("플레이어가 방에서 나갔습니다.");
     }
 
+    @DeleteMapping("/{roomCode}")
+    public ResponseEntity<Void> deleteRoom(@PathVariable("roomCode") String roomCode, @RequestBody Map<String, String> request) {
+        String userId = request.get("userId");
+        roomService.deleteRoom(roomCode, userId);
+        return ResponseEntity.noContent().build();
+    }
+
 }
