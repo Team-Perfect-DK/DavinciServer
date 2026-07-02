@@ -137,6 +137,9 @@ public class RoomWebSocketController {
 
         if (roomCode != null && userId != null) {
             roomService.leaveRoom(roomCode, userId);
+            if (roomService.findRoomByCode(roomCode).isEmpty()) {
+                return;
+            }
 
             // 방 상태 업데이트 브로드캐스트
             messagingTemplate.convertAndSend(
