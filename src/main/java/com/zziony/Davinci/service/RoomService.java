@@ -109,7 +109,6 @@ public class RoomService {
 
         boolean isHost = playerId.equals(room.getHostId());
         boolean isGuest = playerId.equals(room.getGuestId());
-        boolean wasPlayer = isHost || isGuest;
 
         if (isHost) {
             room.setHostId(null);
@@ -122,9 +121,6 @@ public class RoomService {
         }
 
         room.assignNewHostIfNeeded();
-        if (wasPlayer) {
-            deleteUserBySessionId(playerId);
-        }
 
         // 게임 중이었고, 한명이라도 남아 있을 때 비정상 종료 처리
         if (room.getStatus() == RoomStatus.PLAYING && (!room.isEmpty())) {
