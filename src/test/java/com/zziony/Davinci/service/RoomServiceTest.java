@@ -101,6 +101,23 @@ class RoomServiceTest {
     }
 
     @Test
+    void joinRoomDoesNotAddHostAsGuest() {
+        Room room = new Room("test room", "host-id", "host");
+        room.setId(1L);
+        room.setRoomCode("room-code");
+        room.setStatus(RoomStatus.WAITING);
+        when(roomRepository.findByRoomCode(room.getRoomCode())).thenReturn(Optional.of(room));
+
+        Room joinedRoom = roomService.joinRoom(room.getRoomCode(), room.getHostId());
+
+        assertEquals(room, joinedRoom);
+        assertEquals(null, room.getGuestId());
+        assertEquals(null, room.getGuestNickname());
+        verify(userRepository, never()).findBySessionId(room.getHostId());
+        verify(roomRepository).save(room);
+    }
+
+    @Test
     void leaveRoomResetsPlayingRoomToWaitingForRemainingPlayer() {
         Room room = roomWithTwoPlayers();
         room.setStatus(RoomStatus.PLAYING);

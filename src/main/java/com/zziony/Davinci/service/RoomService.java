@@ -64,6 +64,11 @@ public class RoomService {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
 
+        if (guestId != null && guestId.equals(room.getHostId())) {
+            touchPlayer(room, guestId);
+            return room;
+        }
+
         if (room.getGuestId() != null) {
             throw new RuntimeException("이미 방이 꽉 찼습니다.");
         }
