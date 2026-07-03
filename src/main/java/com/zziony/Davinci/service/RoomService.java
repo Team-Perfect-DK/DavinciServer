@@ -398,26 +398,27 @@ public class RoomService {
     @Transactional
     public void cleanupStaleRooms() {
         LocalDateTime cutoff = LocalDateTime.now().minusHours(ROOM_INACTIVITY_TIMEOUT_HOURS);
+        List<Room> allRooms = roomRepository.findAll();
         List<Room> roomsToDelete = new ArrayList<>();
 
-        for (Room room : roomRepository.findAll()) {
+        for (Room room : allRooms) {
             if (room.isEmpty() || hasInactivePlayer(room, cutoff)) {
                 cardService.resetCardsForRoom(room.getId());
                 roomsToDelete.add(room);
             }
         }
 
-        if (roomsToDelete.isEmpty()) {
-            return;
+        if (!roomsToDelete.isEmpty()) {
+            roomRepository.deleteAll(roomsToDelete);
+            roomsToDelete.forEach(this::deleteUsersForRoom);
+            roomsToDelete.forEach(room -> messagingTemplate.convertAndSend(
+                    "/topic/rooms/" + room.getRoomCode(),
+                    Map.of("action", "ROOM_DELETED", "payload", Map.of("roomCode", room.getRoomCode()))
+            ));
+            notifyRoomUpdate();
         }
 
-        roomRepository.deleteAll(roomsToDelete);
-        roomsToDelete.forEach(this::deleteUsersForRoom);
-        roomsToDelete.forEach(room -> messagingTemplate.convertAndSend(
-                "/topic/rooms/" + room.getRoomCode(),
-                Map.of("action", "ROOM_DELETED", "payload", Map.of("roomCode", room.getRoomCode()))
-        ));
-        notifyRoomUpdate();
+        cleanupStaleOrphanUsers(allRooms, cutoff);
     }
 
     private boolean hasInactivePlayer(Room room, LocalDateTime cutoff) {
@@ -439,7 +440,29 @@ public class RoomService {
             return false;
         }
         LocalDateTime lastActiveAt = playerLastActiveAt != null ? playerLastActiveAt : legacyLastActiveAt;
-        return lastActiveAt != null && lastActiveAt.isBefore(cutoff);
+        return lastActiveAt == null || lastActiveAt.isBefore(cutoff);
+    }
+
+    private void cleanupStaleOrphanUsers(List<Room> rooms, LocalDateTime cutoff) {
+        List<String> activePlayerIds = rooms.stream()
+                .flatMap(room -> java.util.stream.Stream.of(room.getHostId(), room.getGuestId()))
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        List<User> allUsers = userRepository.findAll();
+        if (allUsers == null) {
+            return;
+        }
+
+        List<User> staleUsers = allUsers.stream()
+                .filter(user -> user.getSessionId() != null)
+                .filter(user -> !activePlayerIds.contains(user.getSessionId()))
+                .filter(user -> user.getCreatedAt() == null || user.getCreatedAt().isBefore(cutoff))
+                .toList();
+
+        if (!staleUsers.isEmpty()) {
+            userRepository.deleteAll(staleUsers);
+        }
     }
 
     public void touchPlayer(Room room, String userId) {

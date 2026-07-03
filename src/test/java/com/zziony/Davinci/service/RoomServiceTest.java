@@ -1,6 +1,7 @@
 package com.zziony.Davinci.service;
 
 import com.zziony.Davinci.model.Room;
+import com.zziony.Davinci.model.User;
 import com.zziony.Davinci.model.enums.RoomStatus;
 import com.zziony.Davinci.repository.CardRepository;
 import com.zziony.Davinci.repository.RoomRepository;
@@ -157,6 +158,41 @@ class RoomServiceTest {
     }
 
     @Test
+    void cleanupDeletesWaitingRoomWhenOnlyHostIsInactive() {
+        Room room = new Room("test room", "host-id", "host");
+        room.setId(1L);
+        room.setRoomCode("room-code");
+        room.setStatus(RoomStatus.WAITING);
+        room.setHostLastActiveAt(LocalDateTime.now().minusHours(4));
+        when(roomRepository.findAll()).thenReturn(List.of(room));
+        when(userRepository.findBySessionId(room.getHostId())).thenReturn(Optional.empty());
+
+        roomService.cleanupStaleRooms();
+
+        verify(cardService).resetCardsForRoom(room.getId());
+        verify(roomRepository).deleteAll(List.of(room));
+    }
+
+    @Test
+    void cleanupDeletesLegacyRoomWithoutActivityTimestamps() {
+        Room room = new Room("legacy room", "legacy-host-id", "legacy");
+        room.setId(1L);
+        room.setRoomCode("legacy-room");
+        room.setStatus(RoomStatus.WAITING);
+        room.setCreatedAt(null);
+        room.setUpdatedAt(null);
+        room.setLastActiveAt(null);
+        room.setHostLastActiveAt(null);
+        when(roomRepository.findAll()).thenReturn(List.of(room));
+        when(userRepository.findBySessionId(room.getHostId())).thenReturn(Optional.empty());
+
+        roomService.cleanupStaleRooms();
+
+        verify(cardService).resetCardsForRoom(room.getId());
+        verify(roomRepository).deleteAll(List.of(room));
+    }
+
+    @Test
     void cleanupRunsEveryThirtyMinutes() throws NoSuchMethodException {
         Method cleanupMethod = RoomService.class.getDeclaredMethod("cleanupStaleRooms");
         Scheduled scheduled = cleanupMethod.getAnnotation(Scheduled.class);
@@ -177,6 +213,43 @@ class RoomServiceTest {
         verify(roomRepository, never()).deleteAll(List.of(room));
     }
 
+    @Test
+    void cleanupDeletesStaleUserThatIsNotInAnyRoom() {
+        User user = user("orphan-id", "orphan");
+        user.setCreatedAt(LocalDateTime.now().minusHours(4));
+        when(roomRepository.findAll()).thenReturn(List.of());
+        when(userRepository.findAll()).thenReturn(List.of(user));
+
+        roomService.cleanupStaleRooms();
+
+        verify(userRepository).deleteAll(List.of(user));
+    }
+
+    @Test
+    void cleanupDeletesLegacyOrphanUserWithoutCreatedAt() {
+        User user = user("legacy-id", "legacy");
+        user.setCreatedAt(null);
+        when(roomRepository.findAll()).thenReturn(List.of());
+        when(userRepository.findAll()).thenReturn(List.of(user));
+
+        roomService.cleanupStaleRooms();
+
+        verify(userRepository).deleteAll(List.of(user));
+    }
+
+    @Test
+    void cleanupKeepsUserThatIsStillInARoom() {
+        Room room = roomWithTwoPlayers();
+        User host = user(room.getHostId(), "host");
+        host.setCreatedAt(LocalDateTime.now().minusHours(4));
+        when(roomRepository.findAll()).thenReturn(List.of(room));
+        when(userRepository.findAll()).thenReturn(List.of(host));
+
+        roomService.cleanupStaleRooms();
+
+        verify(userRepository, never()).deleteAll(List.of(host));
+    }
+
     private Room roomWithTwoPlayers() {
         Room room = new Room("test room", "host-id", "host");
         room.setId(1L);
@@ -186,5 +259,11 @@ class RoomServiceTest {
         room.setStatus(RoomStatus.WAITING);
         room.setLastActiveAt(LocalDateTime.now());
         return room;
+    }
+
+    private User user(String sessionId, String nickname) {
+        User user = new User(nickname);
+        user.setSessionId(sessionId);
+        return user;
     }
 }
