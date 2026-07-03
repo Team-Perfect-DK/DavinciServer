@@ -21,15 +21,19 @@ public class User {
 
     public User() {
         this.sessionId = UUID.randomUUID().toString(); // 랜덤 sessionId 생성
+        this.createdAt = LocalDateTime.now();
     }
 
     public User(String nickname) {
         this.nickname = nickname;
         this.sessionId = UUID.randomUUID().toString();
+        this.createdAt = LocalDateTime.now();
     }
 
     @PrePersist
     public void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
     }
 }
