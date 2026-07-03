@@ -49,6 +49,7 @@ public class RoomService {
 
         String hostNickname = user.getNickname();
         Room room = new Room(title, hostId, hostNickname);
+        room.setHostLastActiveAt(LocalDateTime.now());
 
         Room savedRoom = roomRepository.save(room);
 

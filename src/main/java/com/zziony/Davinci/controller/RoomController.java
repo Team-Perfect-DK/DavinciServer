@@ -6,6 +6,8 @@ import com.zziony.Davinci.service.RoomService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import java.util.List;
 import java.util.Map;
@@ -51,13 +53,17 @@ public class RoomController {
     @GetMapping("/{roomCode}")
     public Room getRoom(@PathVariable String roomCode) {
         return roomService.findRoomByCode(roomCode)
-                .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "방을 찾을 수 없습니다."));
     }
 
     // 5. 게임 상태 복구
     @GetMapping("/{roomCode}/state")
     public Map<String, Object> getGameState(@PathVariable String roomCode) {
-        return roomService.getGameState(roomCode);
+        try {
+            return roomService.getGameState(roomCode);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
+        }
     }
 
     // 6. 방 접속 상태 갱신
