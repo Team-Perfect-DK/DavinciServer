@@ -108,6 +108,7 @@ public class RoomService {
 
         boolean isHost = playerId.equals(room.getHostId());
         boolean isGuest = playerId.equals(room.getGuestId());
+        boolean wasPlayer = isHost || isGuest;
 
         if (isHost) {
             room.setHostId(null);
@@ -120,6 +121,9 @@ public class RoomService {
         }
 
         room.assignNewHostIfNeeded();
+        if (wasPlayer) {
+            deleteUserBySessionId(playerId);
+        }
 
         // 게임 중이었고, 한명이라도 남아 있을 때 비정상 종료 처리
         if (room.getStatus() == RoomStatus.PLAYING && (!room.isEmpty())) {
@@ -218,6 +222,8 @@ public class RoomService {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
 
+        touchPlayer(room, userId);
+
         CardColor wantColor;
         try {
             wantColor = CardColor.valueOf(color);
@@ -262,6 +268,7 @@ public class RoomService {
     public void processGuess(String roomCode, String userId, Long targetCardId, int guessedNumber, String guessedColor) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
+        touchPlayer(room, userId);
         Card card = cardService.findCardById(targetCardId)
                 .orElseThrow(() -> new IllegalArgumentException("카드를 찾을 수 없습니다."));
         Card openedCard = null;
@@ -433,6 +440,20 @@ public class RoomService {
         }
         LocalDateTime lastActiveAt = playerLastActiveAt != null ? playerLastActiveAt : legacyLastActiveAt;
         return lastActiveAt != null && lastActiveAt.isBefore(cutoff);
+    }
+
+    public void touchPlayer(Room room, String userId) {
+        if (room == null || userId == null) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (userId.equals(room.getHostId())) {
+            room.setHostLastActiveAt(now);
+        } else if (userId.equals(room.getGuestId())) {
+            room.setGuestLastActiveAt(now);
+        }
+        roomRepository.save(room);
     }
 
     private void deleteRoom(Room room, boolean deleteUsers) {

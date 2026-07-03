@@ -68,9 +68,10 @@ class RoomServiceTest {
     }
 
     @Test
-    void leaveRoomPromotesGuestAndKeepsUsersWhenHostLeaves() {
+    void leaveRoomPromotesGuestAndDeletesOnlyLeavingHost() {
         Room room = roomWithTwoPlayers();
         when(roomRepository.findByRoomCode(room.getRoomCode())).thenReturn(Optional.of(room));
+        when(userRepository.findBySessionId(room.getHostId())).thenReturn(Optional.empty());
 
         roomService.leaveRoom(room.getRoomCode(), room.getHostId());
 
@@ -79,13 +80,15 @@ class RoomServiceTest {
         assertEquals(RoomStatus.WAITING, room.getStatus());
         verify(roomRepository).save(room);
         verify(roomRepository, never()).delete(room);
-        verify(userRepository, never()).findBySessionId(room.getHostId());
+        verify(userRepository).findBySessionId("host-id");
+        verify(userRepository, never()).findBySessionId("guest-id");
     }
 
     @Test
-    void leaveRoomKeepsHostWhenGuestLeaves() {
+    void leaveRoomKeepsHostAndDeletesOnlyLeavingGuest() {
         Room room = roomWithTwoPlayers();
         when(roomRepository.findByRoomCode(room.getRoomCode())).thenReturn(Optional.of(room));
+        when(userRepository.findBySessionId(room.getGuestId())).thenReturn(Optional.empty());
 
         roomService.leaveRoom(room.getRoomCode(), room.getGuestId());
 
@@ -94,7 +97,8 @@ class RoomServiceTest {
         assertEquals(RoomStatus.WAITING, room.getStatus());
         verify(roomRepository).save(room);
         verify(roomRepository, never()).delete(room);
-        verify(userRepository, never()).findBySessionId(room.getHostId());
+        verify(userRepository).findBySessionId("guest-id");
+        verify(userRepository, never()).findBySessionId("host-id");
     }
 
     @Test
@@ -105,6 +109,7 @@ class RoomServiceTest {
         room.setCurrentTurnHasDrawn(true);
         room.setCurrentTurnHasGuessed(true);
         when(roomRepository.findByRoomCode(room.getRoomCode())).thenReturn(Optional.of(room));
+        when(userRepository.findBySessionId(room.getGuestId())).thenReturn(Optional.empty());
 
         roomService.leaveRoom(room.getRoomCode(), room.getGuestId());
 
