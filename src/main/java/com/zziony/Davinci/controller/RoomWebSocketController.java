@@ -84,6 +84,7 @@ public class RoomWebSocketController {
         String userId = message.get("userId");
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
+        roomService.touchPlayer(room, userId);
         String nextTurnUserId = userId.equals(room.getHostId()) ? room.getGuestId() : room.getHostId();
         String nextTurnUserNickname = nextTurnUserId.equals(room.getHostId())
                 ? room.getHostNickname()
