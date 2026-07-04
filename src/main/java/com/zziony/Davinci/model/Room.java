@@ -46,11 +46,17 @@ public class Room {
     private boolean currentTurnHasGuessed;
 
     public Room() {
+        LocalDateTime now = LocalDateTime.now();
         this.roomCode = UUID.randomUUID().toString().substring(0, 8); // 랜덤 방 코드
         this.status = RoomStatus.WAITING;
+        this.createdAt = now;
+        this.updatedAt = now;
+        this.lastActiveAt = now;
+        this.hostLastActiveAt = now;
     }
 
     public Room(String title, String hostId, String hostNickname) {
+        LocalDateTime now = LocalDateTime.now();
         this.title = title;
         this.hostId = hostId;
         this.hostNickname = hostNickname;
@@ -58,6 +64,10 @@ public class Room {
         this.guestNickname = null;
         this.roomCode = UUID.randomUUID().toString().substring(0, 8);
         this.status = RoomStatus.WAITING;
+        this.createdAt = now;
+        this.updatedAt = now;
+        this.lastActiveAt = now;
+        this.hostLastActiveAt = now;
     }
 
     public boolean canStartGame() {
@@ -79,13 +89,25 @@ public class Room {
         return hostId == null && guestId == null;
     }
 
+    public boolean isPlayer(String playerId) {
+        return playerId != null && (playerId.equals(hostId) || playerId.equals(guestId));
+    }
+
     @PrePersist
     public void onCreate() {
         LocalDateTime now = LocalDateTime.now();
-        this.createdAt = now;
-        this.updatedAt = now;
-        this.lastActiveAt = now;
-        this.hostLastActiveAt = now;
+        if (this.createdAt == null) {
+            this.createdAt = now;
+        }
+        if (this.updatedAt == null) {
+            this.updatedAt = now;
+        }
+        if (this.lastActiveAt == null) {
+            this.lastActiveAt = now;
+        }
+        if (this.hostId != null && this.hostLastActiveAt == null) {
+            this.hostLastActiveAt = now;
+        }
     }
 
     @PreUpdate
