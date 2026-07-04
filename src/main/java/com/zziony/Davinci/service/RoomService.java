@@ -24,6 +24,8 @@ import java.util.Optional;
 
 @Service
 public class RoomService {
+    private static final long ROOM_CLEANUP_INTERVAL_MS = 1800000;
+    private static final long ROOM_INACTIVITY_TIMEOUT_HOURS = 3;
 
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
@@ -47,6 +49,7 @@ public class RoomService {
 
         String hostNickname = user.getNickname();
         Room room = new Room(title, hostId, hostNickname);
+        room.setHostLastActiveAt(LocalDateTime.now());
 
         Room savedRoom = roomRepository.save(room);
 
@@ -60,6 +63,11 @@ public class RoomService {
     public Room joinRoom(String roomCode, String guestId) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
+
+        if (guestId != null && guestId.equals(room.getHostId())) {
+            touchPlayer(room, guestId);
+            return room;
+        }
 
         if (room.getGuestId() != null) {
             throw new RuntimeException("이미 방이 꽉 찼습니다.");
@@ -121,9 +129,12 @@ public class RoomService {
 
         // 게임 중이었고, 한명이라도 남아 있을 때 비정상 종료 처리
         if (room.getStatus() == RoomStatus.PLAYING && (!room.isEmpty())) {
+            cardService.resetCardsForRoom(room.getId());
             room.setStatus(RoomStatus.WAITING);
             room.setWinnerNickname(null);
-            roomRepository.save(room);
+            room.setCurrentTurnPlayerId(null);
+            room.setCurrentTurnHasDrawn(false);
+            room.setCurrentTurnHasGuessed(false);
 
             // 남아있는 유저에게 알림 전송 (비정상 종료)
             Map<String, Object> message = Map.of(
@@ -134,7 +145,6 @@ public class RoomService {
                     )
             );
             messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, message);
-            notifyRoomUpdate();
         }
 
         if (room.isEmpty()) {
@@ -160,6 +170,17 @@ public class RoomService {
     }
 
     // 게임 시작 (host부터 턴)
+    public void deleteRoom(String roomCode, String userId) {
+        Room room = roomRepository.findByRoomCode(roomCode)
+                .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
+
+        if (!room.isPlayer(userId)) {
+            throw new IllegalArgumentException("방을 삭제할 권한이 없습니다.");
+        }
+
+        deleteRoom(room, true);
+    }
+
     public List<Card> startGameAndGetCards(String roomCode) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
@@ -202,6 +223,8 @@ public class RoomService {
     public void drawCard(String roomCode, String userId, String color) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
+
+        touchPlayer(room, userId);
 
         CardColor wantColor;
         try {
@@ -247,6 +270,7 @@ public class RoomService {
     public void processGuess(String roomCode, String userId, Long targetCardId, int guessedNumber, String guessedColor) {
         Room room = roomRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("방을 찾을 수 없습니다."));
+        touchPlayer(room, userId);
         Card card = cardService.findCardById(targetCardId)
                 .orElseThrow(() -> new IllegalArgumentException("카드를 찾을 수 없습니다."));
         Card openedCard = null;
@@ -372,70 +396,40 @@ public class RoomService {
         messagingTemplate.convertAndSend("/topic/rooms/update", message);
     }
 
-    @Scheduled(fixedRate = 3600000)
+    @Scheduled(fixedRate = ROOM_CLEANUP_INTERVAL_MS)
     @Transactional
     public void cleanupStaleRooms() {
-        LocalDateTime cutoff = LocalDateTime.now().minusHours(6);
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(ROOM_INACTIVITY_TIMEOUT_HOURS);
+        List<Room> allRooms = roomRepository.findAll();
         List<Room> roomsToDelete = new ArrayList<>();
-        boolean roomsChanged = false;
 
-        for (Room room : roomRepository.findAll()) {
-            boolean playerRemoved = removeInactivePlayers(room, cutoff);
-
-            if (room.isEmpty()) {
+        for (Room room : allRooms) {
+            if (room.isEmpty() || hasInactivePlayer(room, cutoff)) {
                 cardService.resetCardsForRoom(room.getId());
                 roomsToDelete.add(room);
-                roomsChanged = true;
-                continue;
-            }
-
-            if (playerRemoved) {
-                room.assignNewHostIfNeeded();
-                room.setStatus(RoomStatus.WAITING);
-                room.setWinnerNickname(null);
-                roomRepository.save(room);
-                messagingTemplate.convertAndSend(
-                        "/topic/rooms/" + room.getRoomCode(),
-                        Map.of("action", "ROOM_UPDATED", "payload", room)
-                );
-                roomsChanged = true;
             }
         }
 
         if (!roomsToDelete.isEmpty()) {
             roomRepository.deleteAll(roomsToDelete);
+            roomsToDelete.forEach(this::deleteUsersForRoom);
             roomsToDelete.forEach(room -> messagingTemplate.convertAndSend(
                     "/topic/rooms/" + room.getRoomCode(),
                     Map.of("action", "ROOM_DELETED", "payload", Map.of("roomCode", room.getRoomCode()))
             ));
-        }
-
-        if (roomsChanged) {
             notifyRoomUpdate();
         }
+
+        cleanupStaleOrphanUsers(allRooms, cutoff);
     }
 
-    private boolean removeInactivePlayers(Room room, LocalDateTime cutoff) {
+    private boolean hasInactivePlayer(Room room, LocalDateTime cutoff) {
         LocalDateTime legacyLastActiveAt = room.getLastActiveAt() != null
                 ? room.getLastActiveAt()
                 : room.getUpdatedAt() != null ? room.getUpdatedAt() : room.getCreatedAt();
-        boolean removed = false;
 
-        if (isInactivePlayer(room.getHostId(), room.getHostLastActiveAt(), legacyLastActiveAt, cutoff)) {
-            room.setHostId(null);
-            room.setHostNickname(null);
-            room.setHostLastActiveAt(null);
-            removed = true;
-        }
-
-        if (isInactivePlayer(room.getGuestId(), room.getGuestLastActiveAt(), legacyLastActiveAt, cutoff)) {
-            room.setGuestId(null);
-            room.setGuestNickname(null);
-            room.setGuestLastActiveAt(null);
-            removed = true;
-        }
-
-        return removed;
+        return isInactivePlayer(room.getHostId(), room.getHostLastActiveAt(), legacyLastActiveAt, cutoff)
+                || isInactivePlayer(room.getGuestId(), room.getGuestLastActiveAt(), legacyLastActiveAt, cutoff);
     }
 
     private boolean isInactivePlayer(
@@ -448,6 +442,51 @@ public class RoomService {
             return false;
         }
         LocalDateTime lastActiveAt = playerLastActiveAt != null ? playerLastActiveAt : legacyLastActiveAt;
-        return lastActiveAt != null && lastActiveAt.isBefore(cutoff);
+        return lastActiveAt == null || lastActiveAt.isBefore(cutoff);
+    }
+
+    private void cleanupStaleOrphanUsers(List<Room> rooms, LocalDateTime cutoff) {
+        // User does not store an activity timestamp in this rollback baseline,
+        // so deleting orphan users here would risk removing active lobby users.
+    }
+
+    public void touchPlayer(Room room, String userId) {
+        if (room == null || userId == null) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (userId.equals(room.getHostId())) {
+            room.setHostLastActiveAt(now);
+        } else if (userId.equals(room.getGuestId())) {
+            room.setGuestLastActiveAt(now);
+        }
+        roomRepository.save(room);
+    }
+
+    private void deleteRoom(Room room, boolean deleteUsers) {
+        cardService.resetCardsForRoom(room.getId());
+        roomRepository.delete(room);
+        if (deleteUsers) {
+            deleteUsersForRoom(room);
+        }
+        messagingTemplate.convertAndSend(
+                "/topic/rooms/" + room.getRoomCode(),
+                Map.of("action", "ROOM_DELETED", "payload", Map.of("roomCode", room.getRoomCode()))
+        );
+        notifyRoomUpdate();
+    }
+
+    private void deleteUsersForRoom(Room room) {
+        deleteUserBySessionId(room.getHostId());
+        deleteUserBySessionId(room.getGuestId());
+    }
+
+    private void deleteUserBySessionId(String sessionId) {
+        if (sessionId == null) {
+            return;
+        }
+
+        userRepository.findBySessionId(sessionId).ifPresent(userRepository::delete);
     }
 }
